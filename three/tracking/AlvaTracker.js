@@ -24,10 +24,6 @@ export class AlvaTracker {
     this.maxConsecutiveLostFrames = 5;
     this.frameTimeout = null;
 
-    // Target dimensions for processing (will be adjusted based on aspect ratio)
-    this.targetWidth = 640;
-    this.targetHeight = 360;
-
     // Get the dedicated AlvaAR processing canvas
     this.processingCanvas = document.getElementById("alva-canvas");
     if (!this.processingCanvas) {
@@ -38,48 +34,15 @@ export class AlvaTracker {
   }
 
   /**
-   * Calculate optimal dimensions while maintaining aspect ratio
-   * @param {number} videoWidth - Original video width
-   * @param {number} videoHeight - Original video height
-   * @returns {Object} Calculated dimensions
-   */
-  calculateOptimalDimensions(videoWidth, videoHeight) {
-    const videoAspectRatio = videoWidth / videoHeight;
-    let width, height;
-
-    if (videoAspectRatio > 1) {
-      // Landscape
-      width = this.targetWidth;
-      height = Math.round(width / videoAspectRatio);
-    } else {
-      // Portrait
-      height = this.targetHeight;
-      width = Math.round(height * videoAspectRatio);
-    }
-
-    return { width, height };
-  }
-
-  /**
    * Initialize the tracker
    * @returns {Promise<void>}
    */
   async initialize() {
     console.log("[AlvaTracker] Starting initialization...");
-
-    // Initialize context with optimized settings
-    this.ctx = this.processingCanvas.getContext("2d", {
-      alpha: false,
-      desynchronized: true,
-      willReadFrequently: true,
-      imageSmoothingEnabled: false,
-    });
-
-    // Initialize AlvaAR with temporary dimensions
-    // These will be updated when we get the actual video dimensions
-    console.log("[AlvaTracker] Initializing AlvaAR...");
-    this.alva = await AlvaAR.Initialize(this.targetWidth, this.targetHeight);
-    console.log("[AlvaTracker] AlvaAR initialized successfully");
+    // We'll set canvas dimensions when we get the video
+    console.log(
+      "[AlvaTracker] AlvaAR initialization deferred until video is available"
+    );
   }
 
   /**
@@ -118,32 +81,14 @@ export class AlvaTracker {
         this.processingCanvas.height
       );
 
-      // Draw video frame maintaining aspect ratio
-      const videoAspectRatio = this.video.videoWidth / this.video.videoHeight;
-      const canvasAspectRatio =
-        this.processingCanvas.width / this.processingCanvas.height;
-
-      let sx = 0,
-        sy = 0,
-        sw = this.video.videoWidth,
-        sh = this.video.videoHeight;
-
-      if (videoAspectRatio > canvasAspectRatio) {
-        // Video is wider than canvas
-        sw = Math.round(this.video.videoHeight * canvasAspectRatio);
-        sx = Math.round((this.video.videoWidth - sw) / 2);
-      } else {
-        // Video is taller than canvas
-        sh = Math.round(this.video.videoWidth / canvasAspectRatio);
-        sy = Math.round((this.video.videoHeight - sh) / 2);
-      }
-
+      // Draw video frame
+      this.ctx.imageSmoothingEnabled = false;
       this.ctx.drawImage(
         this.video,
-        sx,
-        sy,
-        sw,
-        sh,
+        0,
+        0,
+        this.video.videoWidth,
+        this.video.videoHeight,
         0,
         0,
         this.processingCanvas.width,
@@ -162,7 +107,7 @@ export class AlvaTracker {
       const pose = this.alva.findCameraPose(frame);
 
       if (pose) {
-        // Convert pose to Three.js format
+        // Update camera pose if found
         const convertedPose = this.convertPoseToThreeJS(pose);
         this.onPoseUpdate(convertedPose);
         this.lastPose = convertedPose;
@@ -285,18 +230,49 @@ export class AlvaTracker {
       // Wait for video to have valid dimensions
       await this.waitForVideoDimensions(video);
 
-      // Calculate optimal dimensions based on video aspect ratio
-      const { width, height } = this.calculateOptimalDimensions(
-        video.videoWidth,
-        video.videoHeight
+      // Calculate video aspect ratio
+      this.videoAspectRatio = video.videoWidth / video.videoHeight;
+      console.log(`[AlvaTracker] Video aspect ratio: ${this.videoAspectRatio}`);
+
+      // Set processing canvas dimensions based on video
+      // We'll maintain the video's aspect ratio but scale it to a reasonable size
+      const maxDimension = 640; // Maximum dimension for processing
+      let processingWidth, processingHeight;
+
+      if (this.videoAspectRatio > 1) {
+        // Landscape
+        processingWidth = maxDimension;
+        processingHeight = Math.round(maxDimension / this.videoAspectRatio);
+      } else {
+        // Portrait
+        processingHeight = maxDimension;
+        processingWidth = Math.round(maxDimension * this.videoAspectRatio);
+      }
+
+      this.processingCanvas.width = processingWidth;
+      this.processingCanvas.height = processingHeight;
+      console.log("[AlvaTracker] Processing canvas dimensions:", {
+        width: processingWidth,
+        height: processingHeight,
+      });
+
+      // Set the aspect ratio CSS property
+      this.processingCanvas.style.aspectRatio = `${this.videoAspectRatio}`;
+      console.log(
+        `[AlvaTracker] Set canvas aspect ratio to: ${this.videoAspectRatio}`
       );
 
-      // Update processing canvas dimensions
-      this.processingCanvas.width = width;
-      this.processingCanvas.height = height;
-      console.log("[AlvaTracker] Set processing canvas dimensions:", {
-        width,
-        height,
+      // Initialize AlvaAR with actual dimensions
+      console.log("[AlvaTracker] Initializing AlvaAR...");
+      this.alva = await AlvaAR.Initialize(processingWidth, processingHeight);
+      console.log("[AlvaTracker] AlvaAR initialized successfully");
+
+      // Initialize context with optimized settings
+      this.ctx = this.processingCanvas.getContext("2d", {
+        alpha: false,
+        desynchronized: true,
+        willReadFrequently: true,
+        imageSmoothingEnabled: false,
       });
 
       // Initialize tracking state
@@ -356,49 +332,19 @@ export class AlvaTracker {
       z: matrix[14],
     };
 
-    // Extract rotation using quaternion
-    // This is more stable than Euler angles and avoids gimbal lock
-    const trace = matrix[0] + matrix[5] + matrix[10];
-    let qx, qy, qz, qw;
-
-    if (trace > 0) {
-      const s = 0.5 / Math.sqrt(trace + 1.0);
-      qw = 0.25 / s;
-      qx = (matrix[6] - matrix[9]) * s;
-      qy = (matrix[8] - matrix[2]) * s;
-      qz = (matrix[1] - matrix[4]) * s;
-    } else if (matrix[0] > matrix[5] && matrix[0] > matrix[10]) {
-      const s = 2.0 * Math.sqrt(1.0 + matrix[0] - matrix[5] - matrix[10]);
-      qw = (matrix[6] - matrix[9]) / s;
-      qx = 0.25 * s;
-      qy = (matrix[1] + matrix[4]) / s;
-      qz = (matrix[8] + matrix[2]) / s;
-    } else if (matrix[5] > matrix[10]) {
-      const s = 2.0 * Math.sqrt(1.0 + matrix[5] - matrix[0] - matrix[10]);
-      qw = (matrix[8] - matrix[2]) / s;
-      qx = (matrix[1] + matrix[4]) / s;
-      qy = 0.25 * s;
-      qz = (matrix[6] + matrix[9]) / s;
-    } else {
-      const s = 2.0 * Math.sqrt(1.0 + matrix[10] - matrix[0] - matrix[5]);
-      qw = (matrix[1] - matrix[4]) / s;
-      qx = (matrix[8] + matrix[2]) / s;
-      qy = (matrix[6] + matrix[9]) / s;
-      qz = 0.25 * s;
-    }
-
-    // Convert quaternion to Euler angles (for compatibility with existing code)
-    // This is only used for display purposes, the actual rotation is handled by quaternions
+    // Extract rotation from matrix
     const rotation = {
-      x: Math.atan2(2 * (qw * qx + qy * qz), 1 - 2 * (qx * qx + qy * qy)),
-      y: Math.asin(2 * (qw * qy - qz * qx)),
-      z: Math.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy * qy + qz * qz)),
+      x: Math.atan2(matrix[6], matrix[10]),
+      y: Math.atan2(
+        -matrix[2],
+        Math.sqrt(matrix[0] * matrix[0] + matrix[1] * matrix[1])
+      ),
+      z: Math.atan2(matrix[1], matrix[0]),
     };
 
     return {
       position,
       orientation: rotation,
-      quaternion: { x: qx, y: qy, z: qz, w: qw }, // Add quaternion for more stable rotation
     };
   }
 }
