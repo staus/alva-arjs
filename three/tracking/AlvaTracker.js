@@ -16,17 +16,17 @@ export class AlvaTracker {
     this.frameInterval = 30; // Fixed 30ms interval
     this.frameNumber = 0;
     this.debugMode = false;
-    this.videoAspectRatio = 16 / 9;
+    this.videoAspectRatio = null;
     this.lastPose = null;
     this.poseTimeout = null;
-    this.poseTimeoutDuration = 5000; // Increased to 5 seconds
+    this.poseTimeoutDuration = 5000; // 5 seconds timeout
     this.consecutiveLostFrames = 0;
     this.maxConsecutiveLostFrames = 5;
     this.frameTimeout = null;
 
-    // Fixed dimensions for both display and processing
-    this.width = 640;
-    this.height = 360;
+    // Target dimensions for processing (will be adjusted based on aspect ratio)
+    this.targetWidth = 640;
+    this.targetHeight = 360;
 
     // Get the dedicated AlvaAR processing canvas
     this.processingCanvas = document.getElementById("alva-canvas");
@@ -38,15 +38,34 @@ export class AlvaTracker {
   }
 
   /**
+   * Calculate optimal dimensions while maintaining aspect ratio
+   * @param {number} videoWidth - Original video width
+   * @param {number} videoHeight - Original video height
+   * @returns {Object} Calculated dimensions
+   */
+  calculateOptimalDimensions(videoWidth, videoHeight) {
+    const videoAspectRatio = videoWidth / videoHeight;
+    let width, height;
+
+    if (videoAspectRatio > 1) {
+      // Landscape
+      width = this.targetWidth;
+      height = Math.round(width / videoAspectRatio);
+    } else {
+      // Portrait
+      height = this.targetHeight;
+      width = Math.round(height * videoAspectRatio);
+    }
+
+    return { width, height };
+  }
+
+  /**
    * Initialize the tracker
    * @returns {Promise<void>}
    */
   async initialize() {
     console.log("[AlvaTracker] Starting initialization...");
-
-    // Set canvas dimensions
-    this.processingCanvas.width = this.width;
-    this.processingCanvas.height = this.height;
 
     // Initialize context with optimized settings
     this.ctx = this.processingCanvas.getContext("2d", {
@@ -56,9 +75,10 @@ export class AlvaTracker {
       imageSmoothingEnabled: false,
     });
 
-    // Initialize AlvaAR
+    // Initialize AlvaAR with temporary dimensions
+    // These will be updated when we get the actual video dimensions
     console.log("[AlvaTracker] Initializing AlvaAR...");
-    this.alva = await AlvaAR.Initialize(this.width, this.height);
+    this.alva = await AlvaAR.Initialize(this.targetWidth, this.targetHeight);
     console.log("[AlvaTracker] AlvaAR initialized successfully");
   }
 
@@ -91,24 +111,52 @@ export class AlvaTracker {
       }
 
       // Clear canvas
-      this.ctx.clearRect(0, 0, this.width, this.height);
+      this.ctx.clearRect(
+        0,
+        0,
+        this.processingCanvas.width,
+        this.processingCanvas.height
+      );
 
-      // Draw video frame
-      this.ctx.imageSmoothingEnabled = false;
+      // Draw video frame maintaining aspect ratio
+      const videoAspectRatio = this.video.videoWidth / this.video.videoHeight;
+      const canvasAspectRatio =
+        this.processingCanvas.width / this.processingCanvas.height;
+
+      let sx = 0,
+        sy = 0,
+        sw = this.video.videoWidth,
+        sh = this.video.videoHeight;
+
+      if (videoAspectRatio > canvasAspectRatio) {
+        // Video is wider than canvas
+        sw = Math.round(this.video.videoHeight * canvasAspectRatio);
+        sx = Math.round((this.video.videoWidth - sw) / 2);
+      } else {
+        // Video is taller than canvas
+        sh = Math.round(this.video.videoWidth / canvasAspectRatio);
+        sy = Math.round((this.video.videoHeight - sh) / 2);
+      }
+
       this.ctx.drawImage(
         this.video,
+        sx,
+        sy,
+        sw,
+        sh,
         0,
         0,
-        this.video.videoWidth,
-        this.video.videoHeight,
-        0,
-        0,
-        this.width,
-        this.height
+        this.processingCanvas.width,
+        this.processingCanvas.height
       );
 
       // Get frame data for pose estimation
-      const frame = this.ctx.getImageData(0, 0, this.width, this.height);
+      const frame = this.ctx.getImageData(
+        0,
+        0,
+        this.processingCanvas.width,
+        this.processingCanvas.height
+      );
 
       // Process frame with AlvaAR
       const pose = this.alva.findCameraPose(frame);
@@ -237,15 +285,19 @@ export class AlvaTracker {
       // Wait for video to have valid dimensions
       await this.waitForVideoDimensions(video);
 
-      // Calculate video aspect ratio
-      this.videoAspectRatio = video.videoWidth / video.videoHeight;
-      console.log(`[AlvaTracker] Video aspect ratio: ${this.videoAspectRatio}`);
-
-      // Set the aspect ratio CSS property
-      this.processingCanvas.style.aspectRatio = `${this.videoAspectRatio}`;
-      console.log(
-        `[AlvaTracker] Set canvas aspect ratio to: ${this.videoAspectRatio}`
+      // Calculate optimal dimensions based on video aspect ratio
+      const { width, height } = this.calculateOptimalDimensions(
+        video.videoWidth,
+        video.videoHeight
       );
+
+      // Update processing canvas dimensions
+      this.processingCanvas.width = width;
+      this.processingCanvas.height = height;
+      console.log("[AlvaTracker] Set processing canvas dimensions:", {
+        width,
+        height,
+      });
 
       // Initialize tracking state
       this.isRunning = true;
