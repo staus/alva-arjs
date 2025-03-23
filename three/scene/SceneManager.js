@@ -142,8 +142,16 @@ export class SceneManager {
       );
     }
 
-    // Update camera orientation
-    if (pose.orientation) {
+    // Update camera orientation using quaternion if available
+    if (pose.quaternion) {
+      this.camera.quaternion.set(
+        pose.quaternion.x,
+        pose.quaternion.y,
+        pose.quaternion.z,
+        pose.quaternion.w
+      );
+    } else if (pose.orientation) {
+      // Fallback to Euler angles if quaternion is not available
       this.camera.rotation.set(
         pose.orientation.x,
         pose.orientation.y,
