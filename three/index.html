@@ -36,11 +36,12 @@
         position: fixed;
         top: 0;
         left: 0;
-        width: 640px;
-        height: 480px;
+        max-width: 640px;
+        width: 100%;
         z-index: 1000;
         display: none;
         border: 2px solid red;
+        aspect-ratio: 16/9; /* Default aspect ratio, will be updated dynamically */
       }
       #controls {
         position: fixed;

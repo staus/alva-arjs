@@ -27,8 +27,10 @@ export class AlvaTracker {
     this.lastDebugTime = 0; // For throttling debug logs
     this.debugInterval = 1000; // Log debug info every second
     this.lastProcessedFrame = 0; // Track last successfully processed frame
-    this.recoveryMode = false; // Track if we're in recovery mode
-    this.recoveryTimeout = null; // Timeout for recovery mode
+    this.frameTimeout = null; // For fixed interval frame processing
+    this.videoAspectRatio = 16 / 9; // Default aspect ratio
+    this.baseWidth = 640; // Base width for processing
+    this.baseHeight = 480; // Base height for processing
 
     // Get the dedicated AlvaAR processing canvas
     this.processingCanvas = document.getElementById("alva-canvas");
@@ -50,31 +52,13 @@ export class AlvaTracker {
     this.scaleFactor = this.determineOptimalScale();
     console.log(`[AlvaTracker] Initial scale factor: ${this.scaleFactor}`);
 
-    // Set processed dimensions based on device capabilities
-    this.processedWidth = 640;
-    this.processedHeight = 480;
-    console.log(
-      `[AlvaTracker] Processing dimensions: ${this.processedWidth}x${this.processedHeight}`
-    );
+    // Set base dimensions
+    this.baseWidth = 640;
+    this.baseHeight = 480;
 
-    // Set up processing canvas with optimal dimensions
-    this.processingCanvas.width = this.processedWidth;
-    this.processingCanvas.height = this.processedHeight;
-
-    // Initialize processing context with performance optimizations
-    this.ctx = this.processingCanvas.getContext("2d", {
-      alpha: false,
-      desynchronized: true,
-      willReadFrequently: true,
-    });
-    console.log("[AlvaTracker] Canvas context initialized");
-
-    // Initialize AlvaAR with scaled dimensions
+    // Initialize AlvaAR with base dimensions
     console.log("[AlvaTracker] Initializing AlvaAR...");
-    this.alva = await AlvaAR.Initialize(
-      this.processedWidth,
-      this.processedHeight
-    );
+    this.alva = await AlvaAR.Initialize(this.baseWidth, this.baseHeight);
     console.log("[AlvaTracker] AlvaAR initialized successfully");
   }
 
@@ -110,33 +94,35 @@ export class AlvaTracker {
   }
 
   /**
-   * Start tracking
-   * @param {HTMLVideoElement} video - Video element to track
+   * Update processing dimensions based on video aspect ratio and scale factor
    */
-  start(video) {
-    if (this.isRunning) {
-      console.log("[AlvaTracker] Already running, ignoring start request");
-      return;
+  updateProcessingDimensions() {
+    // Calculate the actual display size of the canvas
+    const displayWidth = this.processingCanvas.clientWidth;
+    const displayHeight = this.processingCanvas.clientHeight;
+
+    // Calculate processing dimensions based on display size and scale factor
+    this.processedWidth = Math.floor(displayWidth * this.scaleFactor);
+    this.processedHeight = Math.floor(displayHeight * this.scaleFactor);
+
+    // Update canvas dimensions for processing
+    this.processingCanvas.width = this.processedWidth;
+    this.processingCanvas.height = this.processedHeight;
+
+    // Initialize or update context
+    if (!this.ctx) {
+      this.ctx = this.processingCanvas.getContext("2d", {
+        alpha: false,
+        desynchronized: true,
+        willReadFrequently: true,
+      });
     }
 
-    console.log("[AlvaTracker] Starting tracking...");
-    this.isRunning = true;
-    this.video = video;
-    this.lastFrameTime = performance.now();
-    this.frameTimes = [];
-    this.frameCount = 0;
-    this.lastFPSUpdate = 0;
-    this.processingBacklog = 0;
-    this.frameNumber = 0;
-
-    // Log video properties
-    console.log(
-      `[AlvaTracker] Video dimensions: ${video.videoWidth}x${video.videoHeight}`
-    );
-    console.log(`[AlvaTracker] Video readyState: ${video.readyState}`);
-
-    // Start frame processing loop
-    this.processFrame();
+    console.log(`[AlvaTracker] Updated processing dimensions:`, {
+      display: `${displayWidth}x${displayHeight}`,
+      processing: `${this.processedWidth}x${this.processedHeight}`,
+      scale: this.scaleFactor,
+    });
   }
 
   /**
@@ -171,19 +157,13 @@ export class AlvaTracker {
       // Adjust scale factor based on performance
       if (this.currentFPS < 30) {
         this.scaleFactor = Math.max(0.5, this.scaleFactor - 0.1);
-        this.processedWidth = Math.floor(640 * this.scaleFactor);
-        this.processedHeight = Math.floor(480 * this.scaleFactor);
-        this.processingCanvas.width = this.processedWidth;
-        this.processingCanvas.height = this.processedHeight;
+        this.updateProcessingDimensions();
         console.log(
           `Reducing resolution to ${this.scaleFactor * 100}% due to low FPS`
         );
       } else if (this.currentFPS > 45 && this.scaleFactor < 1.0) {
         this.scaleFactor = Math.min(1.0, this.scaleFactor + 0.1);
-        this.processedWidth = Math.floor(640 * this.scaleFactor);
-        this.processedHeight = Math.floor(480 * this.scaleFactor);
-        this.processingCanvas.width = this.processedWidth;
-        this.processingCanvas.height = this.processedHeight;
+        this.updateProcessingDimensions();
         console.log(
           `Increasing resolution to ${this.scaleFactor * 100}% due to good FPS`
         );
@@ -192,10 +172,39 @@ export class AlvaTracker {
   }
 
   /**
+   * Calculate dimensions to fit video in canvas while maintaining aspect ratio
+   * @returns {Object} Dimensions for video drawing
+   */
+  calculateVideoDimensions() {
+    const canvasAspectRatio = this.processedWidth / this.processedHeight;
+    let drawWidth = this.processedWidth;
+    let drawHeight = this.processedHeight;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (this.videoAspectRatio > canvasAspectRatio) {
+      // Video is wider than canvas
+      drawHeight = this.processedWidth / this.videoAspectRatio;
+      offsetY = (this.processedHeight - drawHeight) / 2;
+    } else {
+      // Video is taller than canvas
+      drawWidth = this.processedHeight * this.videoAspectRatio;
+      offsetX = (this.processedWidth - drawWidth) / 2;
+    }
+
+    return {
+      width: drawWidth,
+      height: drawHeight,
+      x: offsetX,
+      y: offsetY,
+    };
+  }
+
+  /**
    * Process a single frame
    * @param {number} timestamp - Current timestamp
    */
-  async processFrame(timestamp) {
+  async processFrame() {
     if (!this.isRunning || !this.ctx || !this.video) {
       console.log("[AlvaTracker] Frame processing stopped:", {
         isRunning: this.isRunning,
@@ -206,65 +215,17 @@ export class AlvaTracker {
     }
 
     const currentTime = performance.now();
-    const timeSinceLastFrame = currentTime - this.lastFrameTime;
     this.frameNumber++;
 
     // Debug frame timing
     if (currentTime - this.lastDebugTime > this.debugInterval) {
       console.log(`[AlvaTracker] Frame ${this.frameNumber} timing:`, {
-        timeSinceLastFrame: timeSinceLastFrame.toFixed(2),
-        frameInterval: this.frameInterval,
-        backlog: this.processingBacklog,
         fps: this.currentFPS,
-        recoveryMode: this.recoveryMode,
+        backlog: this.processingBacklog,
       });
       this.lastDebugTime = currentTime;
     }
 
-    // Handle recovery mode
-    if (this.recoveryMode) {
-      if (this.recoveryTimeout) {
-        clearTimeout(this.recoveryTimeout);
-      }
-
-      // If we've successfully processed frames, exit recovery mode
-      if (this.frameNumber - this.lastProcessedFrame > 5) {
-        console.log("[AlvaTracker] Exiting recovery mode");
-        this.recoveryMode = false;
-        this.processingBacklog = 0;
-      }
-    }
-
-    // Skip frame if too soon since last frame
-    if (timeSinceLastFrame < this.frameInterval) {
-      this.processingBacklog++;
-      if (this.processingBacklog % 10 === 0) {
-        console.log(`[AlvaTracker] Skipping frame ${this.frameNumber}:`, {
-          timeSinceLastFrame: timeSinceLastFrame.toFixed(2),
-          backlog: this.processingBacklog,
-        });
-      }
-      requestAnimationFrame(this.processFrame.bind(this));
-      return;
-    }
-
-    // If backlog is too high, enter recovery mode
-    if (this.processingBacklog >= this.maxBacklog && !this.recoveryMode) {
-      console.log("[AlvaTracker] Entering recovery mode");
-      this.recoveryMode = true;
-      this.processingBacklog = 0;
-      this.lastProcessedFrame = this.frameNumber;
-
-      // Set a timeout to force recovery mode exit
-      this.recoveryTimeout = setTimeout(() => {
-        console.log("[AlvaTracker] Forcing recovery mode exit");
-        this.recoveryMode = false;
-        this.processingBacklog = 0;
-      }, 2000); // Exit recovery mode after 2 seconds
-    }
-
-    this.lastFrameTime = currentTime;
-    this.processingBacklog = Math.max(0, this.processingBacklog - 1);
     const frameStartTime = performance.now();
 
     try {
@@ -273,12 +234,14 @@ export class AlvaTracker {
         console.log(
           `[AlvaTracker] Video not ready, state: ${this.video.readyState}`
         );
-        requestAnimationFrame(this.processFrame.bind(this));
+        this.scheduleNextFrame();
         return;
       }
 
-      // Clear and draw video frame at processed resolution
+      // Clear canvas
       this.ctx.clearRect(0, 0, this.processedWidth, this.processedHeight);
+
+      // Draw video frame at full resolution
       this.ctx.drawImage(
         this.video,
         0,
@@ -336,13 +299,67 @@ export class AlvaTracker {
       // Update FPS counter
       this.updateFPS(currentTime);
 
-      // Continue processing frames
-      requestAnimationFrame(this.processFrame.bind(this));
+      // Schedule next frame
+      this.scheduleNextFrame();
     } catch (error) {
       console.error("[AlvaTracker] Error processing frame:", error);
       // Continue processing even if there's an error
-      requestAnimationFrame(this.processFrame.bind(this));
+      this.scheduleNextFrame();
     }
+  }
+
+  /**
+   * Schedule the next frame processing
+   */
+  scheduleNextFrame() {
+    if (this.frameTimeout) {
+      clearTimeout(this.frameTimeout);
+    }
+    this.frameTimeout = setTimeout(() => {
+      this.processFrame();
+    }, this.frameInterval);
+  }
+
+  /**
+   * Start tracking
+   * @param {HTMLVideoElement} video - Video element to track
+   */
+  start(video) {
+    if (this.isRunning) {
+      console.log("[AlvaTracker] Already running, ignoring start request");
+      return;
+    }
+
+    console.log("[AlvaTracker] Starting tracking...");
+    this.isRunning = true;
+    this.video = video;
+    this.lastFrameTime = performance.now();
+    this.frameTimes = [];
+    this.frameCount = 0;
+    this.lastFPSUpdate = 0;
+    this.processingBacklog = 0;
+    this.frameNumber = 0;
+
+    // Calculate video aspect ratio
+    this.videoAspectRatio = video.videoWidth / video.videoHeight;
+
+    // Set the aspect ratio CSS property
+    this.processingCanvas.style.aspectRatio = `${this.videoAspectRatio}`;
+    console.log(
+      `[AlvaTracker] Set canvas aspect ratio to: ${this.videoAspectRatio}`
+    );
+
+    // Update processing dimensions after aspect ratio is set
+    this.updateProcessingDimensions();
+
+    // Log video properties
+    console.log(
+      `[AlvaTracker] Video dimensions: ${video.videoWidth}x${video.videoHeight}`
+    );
+    console.log(`[AlvaTracker] Video readyState: ${video.readyState}`);
+
+    // Start frame processing loop with fixed interval
+    this.processFrame();
   }
 
   /**
@@ -350,8 +367,8 @@ export class AlvaTracker {
    */
   stop() {
     this.isRunning = false;
-    if (this.recoveryTimeout) {
-      clearTimeout(this.recoveryTimeout);
+    if (this.frameTimeout) {
+      clearTimeout(this.frameTimeout);
     }
   }
 }
