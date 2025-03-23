@@ -36,22 +36,41 @@
         left: 50%;
         transform: translateX(-50%);
         z-index: 2;
-        background: rgba(0, 0, 0, 0.5);
-        padding: 10px;
-        border-radius: 5px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 15px;
+        border-radius: 8px;
         color: white;
+        display: flex;
+        gap: 10px;
       }
-      button {
-        margin: 5px;
+      .toggle-button {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         padding: 8px 16px;
         border: none;
         border-radius: 4px;
-        background: #4caf50;
         color: white;
         cursor: pointer;
+        transition: background-color 0.3s;
       }
-      button:hover {
-        background: #45a049;
+      .toggle-button.active {
+        background: #4caf50;
+      }
+      .toggle-button.inactive {
+        background: #666;
+      }
+      .toggle-button:hover {
+        opacity: 0.9;
+      }
+      .status-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #ff0000;
+      }
+      .status-indicator.active {
+        background: #00ff00;
       }
     </style>
   </head>
@@ -61,26 +80,50 @@
       <canvas id="ar-canvas"></canvas>
     </div>
     <div id="controls">
-      <button id="toggle-alva">Toggle AlvaAR</button>
-      <button id="toggle-gps">Toggle GPS</button>
+      <button id="toggle-alva" class="toggle-button inactive">
+        <span class="status-indicator"></span>
+        AlvaAR
+      </button>
+      <button id="toggle-gps" class="toggle-button inactive">
+        <span class="status-indicator"></span>
+        GPS
+      </button>
     </div>
 
     <script type="module" src="index.js"></script>
     <script>
       // Add control handlers
-      document.getElementById("toggle-alva").addEventListener("click", () => {
+      document.getElementById("toggle-alva").addEventListener("click", (e) => {
+        const button = e.currentTarget;
+        const isActive = button.classList.contains("active");
+
+        button.classList.toggle("active", !isActive);
+        button.classList.toggle("inactive", isActive);
+        button
+          .querySelector(".status-indicator")
+          .classList.toggle("active", !isActive);
+
         const config = {
           pose: {
-            alva: !app.trackerManager.config.pose.alva,
+            alva: !isActive,
           },
         };
         app.updateConfig(config);
       });
 
-      document.getElementById("toggle-gps").addEventListener("click", () => {
+      document.getElementById("toggle-gps").addEventListener("click", (e) => {
+        const button = e.currentTarget;
+        const isActive = button.classList.contains("active");
+
+        button.classList.toggle("active", !isActive);
+        button.classList.toggle("inactive", isActive);
+        button
+          .querySelector(".status-indicator")
+          .classList.toggle("active", !isActive);
+
         const config = {
           pose: {
-            gps: !app.trackerManager.config.pose.gps,
+            gps: !isActive,
           },
         };
         app.updateConfig(config);

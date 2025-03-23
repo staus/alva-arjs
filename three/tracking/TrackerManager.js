@@ -15,11 +15,12 @@ export class TrackerManager {
     };
     this.config = {
       pose: {
-        alva: true,
-        gps: true,
+        alva: false,
+        gps: false,
       },
     };
     this.currentPose = null;
+    this.video = null;
   }
 
   /**
@@ -48,6 +49,7 @@ export class TrackerManager {
    * @param {HTMLVideoElement} video - Video element for AlvaAR tracking
    */
   start(video) {
+    this.video = video;
     if (this.config.pose.alva) {
       this.trackers.alva.start(video);
     }

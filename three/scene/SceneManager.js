@@ -16,6 +16,7 @@ export class SceneManager {
     this.currentFPS = 60;
     this.frameCount = 0;
     this.lastFPSUpdate = 0;
+    this.spinningCube = null;
   }
 
   /**
@@ -42,6 +43,25 @@ export class SceneManager {
     );
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.container.appendChild(this.renderer.domElement);
+
+    // Create spinning cube
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshPhongMaterial({
+      color: 0x00ff00,
+      shininess: 100,
+    });
+    this.spinningCube = new THREE.Mesh(geometry, material);
+    this.spinningCube.position.set(0, 0, -5);
+    this.scene.add(this.spinningCube);
+
+    // Add ambient light
+    const ambientLight = new THREE.AmbientLight(0x404040);
+    this.scene.add(ambientLight);
+
+    // Add directional light
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(1, 1, 1);
+    this.scene.add(directionalLight);
 
     // Handle window resize
     window.addEventListener("resize", this.handleResize.bind(this));
@@ -131,6 +151,19 @@ export class SceneManager {
   }
 
   /**
+   * Update scene objects
+   * @param {number} deltaTime - Time since last frame in seconds
+   */
+  updateScene(deltaTime) {
+    if (this.spinningCube) {
+      // Rotate the cube
+      this.spinningCube.rotation.x += deltaTime * 0.5;
+      this.spinningCube.rotation.y += deltaTime * 0.7;
+      this.spinningCube.rotation.z += deltaTime * 0.3;
+    }
+  }
+
+  /**
    * Render a single frame
    * @param {number} timestamp - Current timestamp
    */
@@ -144,8 +177,12 @@ export class SceneManager {
       return;
     }
 
+    const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
     this.lastFrameTime = timestamp;
     const frameStartTime = performance.now();
+
+    // Update scene objects
+    this.updateScene(deltaTime);
 
     // Render scene
     this.renderer.render(this.scene, this.camera);
