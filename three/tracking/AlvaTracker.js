@@ -162,7 +162,7 @@ export class AlvaTracker {
       const pose = this.alva.findCameraPose(frame);
 
       if (pose) {
-        // Convert pose to Three.js format
+        // Update camera pose if found
         const convertedPose = this.convertPoseToThreeJS(pose);
         this.onPoseUpdate(convertedPose);
         this.lastPose = convertedPose;
@@ -356,49 +356,19 @@ export class AlvaTracker {
       z: matrix[14],
     };
 
-    // Extract rotation using quaternion
-    // This is more stable than Euler angles and avoids gimbal lock
-    const trace = matrix[0] + matrix[5] + matrix[10];
-    let qx, qy, qz, qw;
-
-    if (trace > 0) {
-      const s = 0.5 / Math.sqrt(trace + 1.0);
-      qw = 0.25 / s;
-      qx = (matrix[6] - matrix[9]) * s;
-      qy = (matrix[8] - matrix[2]) * s;
-      qz = (matrix[1] - matrix[4]) * s;
-    } else if (matrix[0] > matrix[5] && matrix[0] > matrix[10]) {
-      const s = 2.0 * Math.sqrt(1.0 + matrix[0] - matrix[5] - matrix[10]);
-      qw = (matrix[6] - matrix[9]) / s;
-      qx = 0.25 * s;
-      qy = (matrix[1] + matrix[4]) / s;
-      qz = (matrix[8] + matrix[2]) / s;
-    } else if (matrix[5] > matrix[10]) {
-      const s = 2.0 * Math.sqrt(1.0 + matrix[5] - matrix[0] - matrix[10]);
-      qw = (matrix[8] - matrix[2]) / s;
-      qx = (matrix[1] + matrix[4]) / s;
-      qy = 0.25 * s;
-      qz = (matrix[6] + matrix[9]) / s;
-    } else {
-      const s = 2.0 * Math.sqrt(1.0 + matrix[10] - matrix[0] - matrix[5]);
-      qw = (matrix[1] - matrix[4]) / s;
-      qx = (matrix[8] + matrix[2]) / s;
-      qy = (matrix[6] + matrix[9]) / s;
-      qz = 0.25 * s;
-    }
-
-    // Convert quaternion to Euler angles (for compatibility with existing code)
-    // This is only used for display purposes, the actual rotation is handled by quaternions
+    // Extract rotation from matrix
     const rotation = {
-      x: Math.atan2(2 * (qw * qx + qy * qz), 1 - 2 * (qx * qx + qy * qy)),
-      y: Math.asin(2 * (qw * qy - qz * qx)),
-      z: Math.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy * qy + qz * qz)),
+      x: Math.atan2(matrix[6], matrix[10]),
+      y: Math.atan2(
+        -matrix[2],
+        Math.sqrt(matrix[0] * matrix[0] + matrix[1] * matrix[1])
+      ),
+      z: Math.atan2(matrix[1], matrix[0]),
     };
 
     return {
       position,
       orientation: rotation,
-      quaternion: { x: qx, y: qy, z: qz, w: qw }, // Add quaternion for more stable rotation
     };
   }
 }
