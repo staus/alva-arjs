@@ -16,17 +16,13 @@ export class AlvaTracker {
     this.frameInterval = 30; // Fixed 30ms interval
     this.frameNumber = 0;
     this.debugMode = false;
-    this.videoAspectRatio = 16 / 9;
+    this.videoAspectRatio = null;
     this.lastPose = null;
     this.poseTimeout = null;
-    this.poseTimeoutDuration = 5000; // Increased to 5 seconds
+    this.poseTimeoutDuration = 5000; // 5 seconds timeout
     this.consecutiveLostFrames = 0;
     this.maxConsecutiveLostFrames = 5;
     this.frameTimeout = null;
-
-    // Fixed dimensions for both display and processing
-    this.width = 640;
-    this.height = 360;
 
     // Get the dedicated AlvaAR processing canvas
     this.processingCanvas = document.getElementById("alva-canvas");
@@ -43,23 +39,10 @@ export class AlvaTracker {
    */
   async initialize() {
     console.log("[AlvaTracker] Starting initialization...");
-
-    // Set canvas dimensions
-    this.processingCanvas.width = this.width;
-    this.processingCanvas.height = this.height;
-
-    // Initialize context with optimized settings
-    this.ctx = this.processingCanvas.getContext("2d", {
-      alpha: false,
-      desynchronized: true,
-      willReadFrequently: true,
-      imageSmoothingEnabled: false,
-    });
-
-    // Initialize AlvaAR
-    console.log("[AlvaTracker] Initializing AlvaAR...");
-    this.alva = await AlvaAR.Initialize(this.width, this.height);
-    console.log("[AlvaTracker] AlvaAR initialized successfully");
+    // We'll set canvas dimensions when we get the video
+    console.log(
+      "[AlvaTracker] AlvaAR initialization deferred until video is available"
+    );
   }
 
   /**
@@ -91,7 +74,12 @@ export class AlvaTracker {
       }
 
       // Clear canvas
-      this.ctx.clearRect(0, 0, this.width, this.height);
+      this.ctx.clearRect(
+        0,
+        0,
+        this.processingCanvas.width,
+        this.processingCanvas.height
+      );
 
       // Draw video frame
       this.ctx.imageSmoothingEnabled = false;
@@ -103,12 +91,17 @@ export class AlvaTracker {
         this.video.videoHeight,
         0,
         0,
-        this.width,
-        this.height
+        this.processingCanvas.width,
+        this.processingCanvas.height
       );
 
       // Get frame data for pose estimation
-      const frame = this.ctx.getImageData(0, 0, this.width, this.height);
+      const frame = this.ctx.getImageData(
+        0,
+        0,
+        this.processingCanvas.width,
+        this.processingCanvas.height
+      );
 
       // Process frame with AlvaAR
       const pose = this.alva.findCameraPose(frame);
@@ -241,11 +234,46 @@ export class AlvaTracker {
       this.videoAspectRatio = video.videoWidth / video.videoHeight;
       console.log(`[AlvaTracker] Video aspect ratio: ${this.videoAspectRatio}`);
 
+      // Set processing canvas dimensions based on video
+      // We'll maintain the video's aspect ratio but scale it to a reasonable size
+      const maxDimension = 640; // Maximum dimension for processing
+      let processingWidth, processingHeight;
+
+      if (this.videoAspectRatio > 1) {
+        // Landscape
+        processingWidth = maxDimension;
+        processingHeight = Math.round(maxDimension / this.videoAspectRatio);
+      } else {
+        // Portrait
+        processingHeight = maxDimension;
+        processingWidth = Math.round(maxDimension * this.videoAspectRatio);
+      }
+
+      this.processingCanvas.width = processingWidth;
+      this.processingCanvas.height = processingHeight;
+      console.log("[AlvaTracker] Processing canvas dimensions:", {
+        width: processingWidth,
+        height: processingHeight,
+      });
+
       // Set the aspect ratio CSS property
       this.processingCanvas.style.aspectRatio = `${this.videoAspectRatio}`;
       console.log(
         `[AlvaTracker] Set canvas aspect ratio to: ${this.videoAspectRatio}`
       );
+
+      // Initialize AlvaAR with actual dimensions
+      console.log("[AlvaTracker] Initializing AlvaAR...");
+      this.alva = await AlvaAR.Initialize(processingWidth, processingHeight);
+      console.log("[AlvaTracker] AlvaAR initialized successfully");
+
+      // Initialize context with optimized settings
+      this.ctx = this.processingCanvas.getContext("2d", {
+        alpha: false,
+        desynchronized: true,
+        willReadFrequently: true,
+        imageSmoothingEnabled: false,
+      });
 
       // Initialize tracking state
       this.isRunning = true;
