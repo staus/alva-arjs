@@ -13,32 +13,20 @@ export class AlvaTracker {
     this.alva = null;
     this.ctx = null;
     this.lastFrameTime = 0;
-    this.frameTimes = [];
-    this.currentFPS = 60;
-    this.frameCount = 0;
-    this.lastFPSUpdate = 0;
-    this.processingBacklog = 0;
-    this.maxBacklog = 3;
-    this.debugMode = false;
-    this.scaleFactor = 0.65; // Fixed scale factor for stability
-    this.processedWidth = 416; // Fixed processing dimensions
-    this.processedHeight = 234;
     this.frameInterval = 30; // Fixed 30ms interval
     this.frameNumber = 0;
-    this.lastDebugTime = 0;
-    this.debugInterval = 1000;
-    this.lastProcessedFrame = 0;
-    this.frameTimeout = null;
+    this.debugMode = false;
     this.videoAspectRatio = 16 / 9;
-    this.baseWidth = 640;
-    this.baseHeight = 360;
     this.lastPose = null;
     this.poseTimeout = null;
     this.poseTimeoutDuration = 1000; // 1 second timeout for pose updates
     this.consecutiveLostFrames = 0;
     this.maxConsecutiveLostFrames = 5;
-    this.lastValidPose = null;
-    this.poseStabilityThreshold = 0.1; // Threshold for pose stability check
+    this.frameTimeout = null;
+
+    // Fixed dimensions for both display and processing
+    this.width = 640;
+    this.height = 360;
 
     // Get the dedicated AlvaAR processing canvas
     this.processingCanvas = document.getElementById("alva-canvas");
@@ -56,213 +44,22 @@ export class AlvaTracker {
   async initialize() {
     console.log("[AlvaTracker] Starting initialization...");
 
-    // Set fixed dimensions for processing
-    this.processingCanvas.width = this.processedWidth;
-    this.processingCanvas.height = this.processedHeight;
+    // Set canvas dimensions
+    this.processingCanvas.width = this.width;
+    this.processingCanvas.height = this.height;
 
-    // Initialize context
+    // Initialize context with optimized settings
     this.ctx = this.processingCanvas.getContext("2d", {
       alpha: false,
       desynchronized: true,
       willReadFrequently: true,
+      imageSmoothingEnabled: false,
     });
 
-    // Initialize AlvaAR with fixed dimensions
+    // Initialize AlvaAR
     console.log("[AlvaTracker] Initializing AlvaAR...");
-    this.alva = await AlvaAR.Initialize(
-      this.processedWidth,
-      this.processedHeight
-    );
+    this.alva = await AlvaAR.Initialize(this.width, this.height);
     console.log("[AlvaTracker] AlvaAR initialized successfully");
-  }
-
-  /**
-   * Update processing dimensions based on video aspect ratio and scale factor
-   */
-  updateProcessingDimensions() {
-    // Store current display state
-    const wasVisible = this.processingCanvas.style.display === "block";
-
-    // Temporarily make visible for dimension calculation
-    this.processingCanvas.style.display = "block";
-    this.processingCanvas.offsetHeight; // Force reflow
-
-    // Calculate the actual display size of the canvas
-    const displayWidth = this.processingCanvas.clientWidth;
-    const displayHeight = this.processingCanvas.clientHeight;
-
-    // If display dimensions are 0, use base dimensions
-    const effectiveWidth = displayWidth || this.baseWidth;
-    const effectiveHeight = displayHeight || this.baseHeight;
-
-    // Calculate processing dimensions based on display size and scale factor
-    this.processedWidth = Math.floor(effectiveWidth * this.scaleFactor);
-    this.processedHeight = Math.floor(effectiveHeight * this.scaleFactor);
-
-    // Ensure minimum dimensions
-    this.processedWidth = Math.max(1, this.processedWidth);
-    this.processedHeight = Math.max(1, this.processedHeight);
-
-    // Update canvas dimensions for processing
-    this.processingCanvas.width = this.processedWidth;
-    this.processingCanvas.height = this.processedHeight;
-
-    // Initialize or update context
-    if (!this.ctx) {
-      this.ctx = this.processingCanvas.getContext("2d", {
-        alpha: false,
-        desynchronized: true,
-        willReadFrequently: true,
-      });
-    }
-
-    // Restore original visibility state
-    this.processingCanvas.style.display = wasVisible ? "block" : "none";
-
-    // Reinitialize AlvaAR with new dimensions
-    if (this.alva) {
-      console.log("[AlvaTracker] Reinitializing AlvaAR with new dimensions...");
-      AlvaAR.Initialize(this.processedWidth, this.processedHeight)
-        .then((newAlva) => {
-          this.alva = newAlva;
-          console.log("[AlvaTracker] AlvaAR reinitialized successfully");
-        })
-        .catch((error) => {
-          console.error("[AlvaTracker] Error reinitializing AlvaAR:", error);
-        });
-    }
-
-    console.log(`[AlvaTracker] Updated processing dimensions:`, {
-      display: `${displayWidth}x${displayHeight}`,
-      effective: `${effectiveWidth}x${effectiveHeight}`,
-      processing: `${this.processedWidth}x${this.processedHeight}`,
-      scale: this.scaleFactor,
-      canvasStyle: {
-        display: this.processingCanvas.style.display,
-        width: this.processingCanvas.style.width,
-        height: this.processingCanvas.style.height,
-      },
-    });
-  }
-
-  /**
-   * Toggle debug mode
-   * @param {boolean} enabled - Whether to enable debug mode
-   */
-  setDebugMode(enabled) {
-    this.debugMode = enabled;
-    this.processingCanvas.style.display = enabled ? "block" : "none";
-    if (enabled) {
-      // Force a reflow to ensure we get the correct dimensions
-      this.processingCanvas.offsetHeight;
-      this.updateProcessingDimensions();
-    }
-  }
-
-  /**
-   * Update FPS based on recent frame times
-   * @param {number} currentTime - Current timestamp
-   */
-  updateFPS(currentTime) {
-    this.frameCount++;
-
-    if (currentTime - this.lastFPSUpdate >= 1000) {
-      this.currentFPS = this.frameCount;
-      this.frameCount = 0;
-      this.lastFPSUpdate = currentTime;
-
-      // Only adjust scale factor if FPS is consistently low
-      if (this.currentFPS < 20) {
-        this.scaleFactor = Math.max(0.5, this.scaleFactor - 0.1);
-        this.updateProcessingDimensions();
-        console.log(
-          `Reducing resolution to ${this.scaleFactor * 100}% due to low FPS`
-        );
-      }
-    }
-  }
-
-  /**
-   * Calculate dimensions to fit video in canvas while maintaining aspect ratio
-   * @returns {Object} Dimensions for video drawing
-   */
-  calculateVideoDimensions() {
-    const canvasAspectRatio = this.processedWidth / this.processedHeight;
-    let drawWidth = this.processedWidth;
-    let drawHeight = this.processedHeight;
-    let offsetX = 0;
-    let offsetY = 0;
-
-    if (this.videoAspectRatio > canvasAspectRatio) {
-      // Video is wider than canvas
-      drawHeight = this.processedWidth / this.videoAspectRatio;
-      offsetY = (this.processedHeight - drawHeight) / 2;
-    } else {
-      // Video is taller than canvas
-      drawWidth = this.processedHeight * this.videoAspectRatio;
-      offsetX = (this.processedWidth - drawWidth) / 2;
-    }
-
-    return {
-      width: drawWidth,
-      height: drawHeight,
-      x: offsetX,
-      y: offsetY,
-    };
-  }
-
-  /**
-   * Check if a pose is stable enough to use
-   * @param {Object} pose - The pose to check
-   * @returns {boolean} Whether the pose is stable
-   */
-  isPoseStable(pose) {
-    if (!this.lastValidPose) return true;
-
-    // Check translation stability
-    const dx = Math.abs(pose[12] - this.lastValidPose[12]);
-    const dy = Math.abs(pose[13] - this.lastValidPose[13]);
-    const dz = Math.abs(pose[14] - this.lastValidPose[14]);
-
-    // Check rotation stability (using quaternion difference)
-    const r1 = new THREE.Quaternion().setFromRotationMatrix(
-      new THREE.Matrix4().fromArray(this.lastValidPose)
-    );
-    const r2 = new THREE.Quaternion().setFromRotationMatrix(
-      new THREE.Matrix4().fromArray(pose)
-    );
-    const qDiff = THREE.Quaternion.multiply(r1, r2.clone().invert());
-
-    // Calculate rotation angle
-    const angle = 2 * Math.acos(Math.abs(qDiff.w));
-
-    return (
-      dx < this.poseStabilityThreshold &&
-      dy < this.poseStabilityThreshold &&
-      dz < this.poseStabilityThreshold &&
-      angle < this.poseStabilityThreshold
-    );
-  }
-
-  /**
-   * Convert AlvaAR pose to Three.js coordinate system
-   * @param {Array} pose - AlvaAR pose matrix
-   * @returns {Array} Converted pose matrix
-   */
-  convertPoseToThreeJS(pose) {
-    // Create a copy of the pose matrix
-    const convertedPose = [...pose];
-
-    // Invert x and negate y,z for rotation
-    convertedPose[0] = -pose[0]; // Invert x
-    convertedPose[1] = pose[1]; // Keep y
-    convertedPose[2] = -pose[2]; // Negate z
-
-    // Invert y and z for translation
-    convertedPose[13] = -pose[13]; // Invert y
-    convertedPose[14] = -pose[14]; // Invert z
-
-    return convertedPose;
   }
 
   /**
@@ -283,17 +80,6 @@ export class AlvaTracker {
     const currentTime = performance.now();
     this.frameNumber++;
 
-    // Debug frame timing
-    if (currentTime - this.lastDebugTime > this.debugInterval) {
-      console.log(`[AlvaTracker] Frame ${this.frameNumber} timing:`, {
-        fps: this.currentFPS,
-        dimensions: `${this.processedWidth}x${this.processedHeight}`,
-        videoDimensions: `${this.video.videoWidth}x${this.video.videoHeight}`,
-        consecutiveLostFrames: this.consecutiveLostFrames,
-      });
-      this.lastDebugTime = currentTime;
-    }
-
     try {
       // Check video state
       if (this.video.readyState !== 4) {
@@ -305,9 +91,10 @@ export class AlvaTracker {
       }
 
       // Clear canvas
-      this.ctx.clearRect(0, 0, this.processedWidth, this.processedHeight);
+      this.ctx.clearRect(0, 0, this.width, this.height);
 
-      // Draw video frame at full resolution first, then scale
+      // Draw video frame
+      this.ctx.imageSmoothingEnabled = false;
       this.ctx.drawImage(
         this.video,
         0,
@@ -316,28 +103,21 @@ export class AlvaTracker {
         this.video.videoHeight,
         0,
         0,
-        this.processedWidth,
-        this.processedHeight
+        this.width,
+        this.height
       );
 
       // Get frame data for pose estimation
-      const frame = this.ctx.getImageData(
-        0,
-        0,
-        this.processedWidth,
-        this.processedHeight
-      );
+      const frame = this.ctx.getImageData(0, 0, this.width, this.height);
 
       // Process frame with AlvaAR
       const pose = this.alva.findCameraPose(frame);
 
-      if (pose && this.isPoseStable(pose)) {
-        // Update camera pose if found and stable
+      if (pose) {
+        // Update camera pose if found
         const convertedPose = this.convertPoseToThreeJS(pose);
         this.onPoseUpdate(convertedPose);
         this.lastPose = convertedPose;
-        this.lastValidPose = pose;
-        this.lastProcessedFrame = this.frameNumber;
         this.consecutiveLostFrames = 0;
 
         // Clear pose timeout
@@ -363,7 +143,6 @@ export class AlvaTracker {
           if (!this.poseTimeout) {
             this.poseTimeout = setTimeout(() => {
               this.lastPose = null;
-              this.lastValidPose = null;
               this.onPoseUpdate(null);
               if (this.frameNumber % 30 === 0) {
                 console.log(
@@ -380,19 +159,14 @@ export class AlvaTracker {
             );
           }
         }
-
-        // Only draw feature points in debug mode
-        if (this.debugMode) {
-          const dots = this.alva.getFramePoints();
-          for (const p of dots) {
-            this.ctx.fillStyle = "white";
-            this.ctx.fillRect(p.x, p.y, 2, 2);
-          }
-        }
       }
 
-      // Update FPS counter
-      this.updateFPS(currentTime);
+      // Always draw feature points for debugging
+      const dots = this.alva.getFramePoints();
+      for (const p of dots) {
+        this.ctx.fillStyle = "white";
+        this.ctx.fillRect(p.x, p.y, 4, 4); // Increased point size for better visibility
+      }
 
       // Schedule next frame with fixed interval
       this.scheduleNextFrame();
@@ -476,8 +250,6 @@ export class AlvaTracker {
       // Initialize tracking state
       this.isRunning = true;
       this.lastFrameTime = performance.now();
-      this.frameCount = 0;
-      this.lastFPSUpdate = 0;
       this.frameNumber = 0;
       this.lastPose = null;
       if (this.poseTimeout) {
@@ -505,5 +277,26 @@ export class AlvaTracker {
     if (this.poseTimeout) {
       clearTimeout(this.poseTimeout);
     }
+  }
+
+  /**
+   * Convert AlvaAR pose to Three.js coordinate system
+   * @param {Array} pose - AlvaAR pose matrix
+   * @returns {Array} Converted pose matrix
+   */
+  convertPoseToThreeJS(pose) {
+    // Create a copy of the pose matrix
+    const convertedPose = [...pose];
+
+    // Invert x and negate y,z for rotation
+    convertedPose[0] = -pose[0]; // Invert x
+    convertedPose[1] = pose[1]; // Keep y
+    convertedPose[2] = -pose[2]; // Negate z
+
+    // Invert y and z for translation
+    convertedPose[13] = -pose[13]; // Invert y
+    convertedPose[14] = -pose[14]; // Invert z
+
+    return convertedPose;
   }
 }

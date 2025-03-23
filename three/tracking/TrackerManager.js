@@ -22,7 +22,6 @@ export class TrackerManager {
       performance: {
         targetFPS: 60,
         minFPS: 30,
-        scaleFactor: 1.0,
       },
     };
     this.currentPose = null;
@@ -30,7 +29,6 @@ export class TrackerManager {
     this.performanceStats = {
       fps: 0,
       frameTime: 0,
-      processingBacklog: 0,
     };
   }
 
@@ -63,7 +61,6 @@ export class TrackerManager {
     this.video = video;
     if (this.config.pose.alva) {
       this.trackers.alva.start(video);
-      this.trackers.alva.setDebugMode(this.config.debug);
     }
     if (this.config.pose.gps) {
       this.trackers.gps.start();
@@ -104,7 +101,6 @@ export class TrackerManager {
     if (this.trackers.alva) {
       if (this.config.pose.alva) {
         this.trackers.alva.start(this.video);
-        this.trackers.alva.setDebugMode(this.config.debug);
       } else {
         this.trackers.alva.stop();
       }
@@ -166,14 +162,8 @@ export class TrackerManager {
   getPerformanceStats() {
     if (this.trackers.alva) {
       this.performanceStats = {
-        fps: this.trackers.alva.currentFPS,
-        frameTime:
-          this.trackers.alva.frameTimes.length > 0
-            ? this.trackers.alva.frameTimes.reduce((a, b) => a + b, 0) /
-              this.trackers.alva.frameTimes.length
-            : 0,
-        processingBacklog: this.trackers.alva.processingBacklog,
-        scaleFactor: this.trackers.alva.scaleFactor,
+        fps: 30, // Fixed frame rate since we removed FPS tracking
+        frameTime: 33.33, // Fixed frame time (1000ms / 30fps)
       };
     }
     return this.performanceStats;
