@@ -17,7 +17,7 @@ export class SceneManager {
     this.currentFPS = 60;
     this.frameCount = 0;
     this.lastFPSUpdate = 0;
-    this.spinningCube = null;
+    this.objectUpdates = new Map(); // Store update functions for each object
   }
 
   /**
@@ -40,7 +40,7 @@ export class SceneManager {
     // Create renderer using existing canvas
     this.renderer = new THREE.WebGLRenderer({
       canvas: this.canvas,
-      antialias: true,
+      antialias: false,
       alpha: true, // Enable transparency
     });
     this.renderer.setSize(
@@ -48,29 +48,22 @@ export class SceneManager {
       this.container.clientHeight
     );
     this.renderer.setPixelRatio(window.devicePixelRatio);
-    this.container.appendChild(this.renderer.domElement);
-
-    // Create spinning cube
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
-    const material = new THREE.MeshPhongMaterial({
-      color: 0x00ff00,
-      shininess: 100,
-    });
-    this.spinningCube = new THREE.Mesh(geometry, material);
-    this.spinningCube.position.set(0, 0, -5);
-    this.scene.add(this.spinningCube);
 
     // Add ambient light
-    const ambientLight = new THREE.AmbientLight(0x404040);
+    const ambientLight = new THREE.AmbientLight(0x404040, 1); // Increased intensity
     this.scene.add(ambientLight);
 
     // Add directional light
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 2); // Increased intensity
     directionalLight.position.set(1, 1, 1);
     this.scene.add(directionalLight);
 
     // Handle window resize
     window.addEventListener("resize", this.handleResize.bind(this));
+
+    // Debug: Log scene contents
+    console.log("Scene contents:", this.scene.children);
+    console.log("Camera position:", this.camera.position);
   }
 
   /**
@@ -79,10 +72,13 @@ export class SceneManager {
   start() {
     if (this.isRunning) return;
     this.isRunning = true;
-    this.lastFrameTime = 0;
     this.frameTimes = [];
     this.frameCount = 0;
     this.lastFPSUpdate = 0;
+
+    // Initialize lastFrameTime with the current timestamp
+    this.lastFrameTime = performance.now();
+
     this.render();
   }
 
@@ -161,12 +157,10 @@ export class SceneManager {
    * @param {number} deltaTime - Time since last frame in seconds
    */
   updateScene(deltaTime) {
-    if (this.spinningCube) {
-      // Rotate the cube
-      this.spinningCube.rotation.x += deltaTime * 0.5;
-      this.spinningCube.rotation.y += deltaTime * 0.7;
-      this.spinningCube.rotation.z += deltaTime * 0.3;
-    }
+    // Update all registered objects
+    this.objectUpdates.forEach((updateFunction, object) => {
+      updateFunction(object, deltaTime);
+    });
   }
 
   /**
@@ -176,14 +170,15 @@ export class SceneManager {
   render(timestamp) {
     if (!this.isRunning) return;
 
-    // Skip frame if too soon since last frame
-    if (timestamp - this.lastFrameTime < 33.33) {
-      // 30 FPS threshold
+    const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
+
+    // Skip frame if deltaTime is invalid
+    if (isNaN(deltaTime) || deltaTime <= 0) {
+      this.lastFrameTime = timestamp;
       requestAnimationFrame(this.render.bind(this));
       return;
     }
 
-    const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
     this.lastFrameTime = timestamp;
     const frameStartTime = performance.now();
 
@@ -208,11 +203,15 @@ export class SceneManager {
   }
 
   /**
-   * Add an object to the scene
+   * Add an object to the scene with an optional update function
    * @param {THREE.Object3D} object - Three.js object to add
+   * @param {Function} updateFunction - Optional function to update the object each frame
    */
-  addObject(object) {
+  addObject(object, updateFunction = null) {
     this.scene.add(object);
+    if (updateFunction) {
+      this.objectUpdates.set(object, updateFunction);
+    }
   }
 
   /**
@@ -221,6 +220,7 @@ export class SceneManager {
    */
   removeObject(object) {
     this.scene.remove(object);
+    this.objectUpdates.delete(object); // Remove update function if it exists
   }
 
   /**

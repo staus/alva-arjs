@@ -34,24 +34,32 @@ class ARApplication {
    */
   async initialize() {
     if (this.isInitialized) return;
+    console.log("Starting AR application initialization...");
 
     // Initialize scene manager
+    console.log("Creating SceneManager...");
     this.sceneManager = new SceneManager(this.container, this.canvas);
+    console.log("Initializing SceneManager...");
     this.sceneManager.initialize();
 
     // Initialize tracker manager
+    console.log("Creating TrackerManager...");
     this.trackerManager = new TrackerManager(this.canvas, (pose) => {
       this.sceneManager.updateCameraPose(pose);
     });
+    console.log("Initializing TrackerManager...");
     await this.trackerManager.initialize();
 
     // Setup video stream
+    console.log("Setting up video stream...");
     await this.setupVideo();
 
     // Add some example objects to the scene
+    //console.log("Adding example objects...");
     this.addExampleObjects();
 
     this.isInitialized = true;
+    console.log("AR application initialization complete");
   }
 
   /**
@@ -78,19 +86,19 @@ class ARApplication {
    * Add example objects to the scene
    */
   addExampleObjects() {
-    // Add a cube
+    // Add a cube that rotates around X axis
     const geometry = new THREE.BoxGeometry();
     const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
     const cube = new THREE.Mesh(geometry, material);
     cube.position.set(0, 0, -5);
-    this.sceneManager.addObject(cube);
 
-    // Add a sphere
-    const sphereGeometry = new THREE.SphereGeometry(1, 32, 32);
-    const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-    sphere.position.set(2, 0, -5);
-    this.sceneManager.addObject(sphere);
+    // Define cube update function
+    const cubeUpdate = (cube, deltaTime) => {
+      cube.rotation.x += deltaTime * 1;
+      cube.rotation.y += deltaTime * 0.8;
+    };
+
+    this.sceneManager.addObject(cube, cubeUpdate);
   }
 
   /**
@@ -101,9 +109,10 @@ class ARApplication {
       console.error("AR application not initialized");
       return;
     }
-
+    console.log("Starting AR application...");
     this.sceneManager.start();
     this.trackerManager.start(this.video);
+    console.log("AR application started");
   }
 
   /**
@@ -127,11 +136,12 @@ class ARApplication {
 }
 
 // Create and initialize the AR application
+console.log("Creating AR application...");
 const app = new ARApplication();
 app
   .initialize()
   .then(() => {
-    console.log("AR application initialized");
+    console.log("AR application initialized successfully");
     app.start();
   })
   .catch((error) => {
