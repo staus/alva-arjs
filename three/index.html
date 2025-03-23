@@ -32,6 +32,16 @@
         height: 100%;
         z-index: 1;
       }
+      #alva-canvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 640px;
+        height: 480px;
+        z-index: 1000;
+        display: none;
+        border: 2px solid red;
+      }
       #controls {
         position: fixed;
         bottom: 20px;
@@ -74,6 +84,17 @@
       .status-indicator.active {
         background: #00ff00;
       }
+      #debug-info {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.7);
+        color: white;
+        padding: 10px;
+        border-radius: 4px;
+        font-family: monospace;
+        display: none;
+      }
     </style>
   </head>
   <body>
@@ -91,7 +112,12 @@
         <span class="status-indicator"></span>
         GPS
       </button>
+      <button id="toggle-debug" class="toggle-button inactive">
+        <span class="status-indicator"></span>
+        Debug
+      </button>
     </div>
+    <div id="debug-info"></div>
 
     <script type="module" src="index.js"></script>
   </body>

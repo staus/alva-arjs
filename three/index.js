@@ -15,6 +15,8 @@ class ARApplication {
     this.trackerManager = null;
     this.sceneManager = null;
     this.isInitialized = false;
+    this.debugInfo = document.getElementById("debug-info");
+    this.lastDebugUpdate = 0;
   }
 
   /**
@@ -121,6 +123,38 @@ class ARApplication {
     if (!this.isInitialized) return;
     this.trackerManager.updateConfig(config);
   }
+
+  /**
+   * Update debug information display
+   */
+  updateDebugInfo() {
+    if (!this.trackerManager) return;
+
+    const stats = this.trackerManager.getPerformanceStats();
+    const currentTime = performance.now();
+
+    // Update debug info every 500ms
+    if (currentTime - this.lastDebugUpdate > 500) {
+      this.debugInfo.innerHTML = `
+        FPS: ${Math.round(stats.fps)}<br>
+        Frame Time: ${Math.round(stats.frameTime)}ms<br>
+        Backlog: ${stats.processingBacklog}<br>
+        Scale: ${Math.round(stats.scaleFactor * 100)}%
+      `;
+      this.lastDebugUpdate = currentTime;
+    }
+  }
+
+  /**
+   * Start debug update loop
+   */
+  startDebugLoop() {
+    const updateDebug = () => {
+      this.updateDebugInfo();
+      requestAnimationFrame(updateDebug);
+    };
+    updateDebug();
+  }
 }
 
 // Create and initialize the AR application
@@ -131,6 +165,7 @@ app
   .then(() => {
     console.log("AR application initialized successfully");
     app.start();
+    app.startDebugLoop();
 
     // Add button click handlers
     document.getElementById("toggle-alva").addEventListener("click", (e) => {
@@ -169,6 +204,23 @@ app
         },
       };
       app.updateConfig(config);
+    });
+
+    document.getElementById("toggle-debug").addEventListener("click", (e) => {
+      const button = e.currentTarget;
+      const isActive = button.classList.contains("active");
+
+      button.classList.toggle("active", !isActive);
+      button.classList.toggle("inactive", isActive);
+      button
+        .querySelector(".status-indicator")
+        .classList.toggle("active", !isActive);
+
+      // Toggle debug mode
+      app.trackerManager.updateConfig({ debug: !isActive });
+
+      // Toggle debug info display
+      app.debugInfo.style.display = !isActive ? "block" : "none";
     });
   })
   .catch((error) => {
