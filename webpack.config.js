@@ -9,7 +9,7 @@ module.exports = {
   },
   output: {
     path: path.resolve(__dirname, "public"),
-    filename: "dist/index.js",
+    filename: "index.js",
   },
   optimization: {
     minimize: false,
@@ -20,7 +20,7 @@ module.exports = {
       patterns: [
         {
           from: "three/index.html",
-          to: "dist/index.html",
+          to: "index.html",
         },
       ],
     }),
