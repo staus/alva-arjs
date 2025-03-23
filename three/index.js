@@ -10,6 +10,8 @@ import { ARCamView } from "../alva/assets/view.js";
 import { Camera, onFrame, resize2cover } from "../alva/assets/utils.js";
 import * as THREE from "three";
 import * as THREEx from "@ar-js-org/ar.js/three.js/build/ar-threex-location-only.js";
+import { TrackerManager } from "./tracking/TrackerManager.js";
+import { SceneManager } from "./scene/SceneManager.js";
 
 // Performance monitoring constants
 const TARGET_FPS = 60;
@@ -17,264 +19,121 @@ const MIN_FPS = 30;
 const FRAME_TIME_THRESHOLD = 1000 / MIN_FPS;
 const PERFORMANCE_SAMPLES = 10;
 
-function main() {
-  console.log("main()");
+class ARApplication {
+  constructor() {
+    this.container = document.getElementById("ar-container");
+    this.video = document.getElementById("ar-video");
+    this.canvas = document.getElementById("ar-canvas");
+    this.trackerManager = null;
+    this.sceneManager = null;
+    this.isInitialized = false;
+  }
 
-  // Configure video constraints for the camera
-  const config = {
-    video: {
-      facingMode: "environment", // Use back camera
-      aspectRatio: 16 / 9,
-      width: { ideal: 1280 },
-    },
-    audio: false,
-  };
+  /**
+   * Initialize the AR application
+   */
+  async initialize() {
+    if (this.isInitialized) return;
 
-  // Set up DOM elements
-  const container = document.getElementById("container");
-  const view = document.createElement("div");
-  const canvas = document.createElement("canvas");
-  const overlay = document.getElementById("overlay");
+    // Initialize scene manager
+    this.sceneManager = new SceneManager(this.container);
+    this.sceneManager.initialize();
 
-  // Initial GPS coordinates (example location)
-  const origLon = -0.72,
-    origLat = 51.05;
+    // Initialize tracker manager
+    this.trackerManager = new TrackerManager(this.canvas, (pose) => {
+      this.sceneManager.updateCameraPose(pose);
+    });
+    await this.trackerManager.initialize();
 
-  // Global variables for AR components
-  let alva, arjs, arCamView, ctx, video;
-  let gotFirstGps = false;
+    // Setup video stream
+    await this.setupVideo();
 
-  // Performance monitoring variables
-  let lastFrameTime = 0;
-  let frameTimes = [];
-  let currentFPS = TARGET_FPS;
-  let frameCount = 0;
-  let lastFPSUpdate = 0;
+    // Add some example objects to the scene
+    this.addExampleObjects();
 
-  // Initialize camera and set up video stream
-  Camera.Initialize(config)
-    .then(async (media) => {
-      video = media.el;
-      // Resize video to cover container while maintaining aspect ratio
-      const size = resize2cover(
-        video.videoWidth,
-        video.videoHeight,
-        container.clientWidth,
-        container.clientHeight
-      );
+    this.isInitialized = true;
+  }
 
-      // Set up canvas dimensions
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight;
-      video.style.width = size.width + "px";
-      video.style.height = size.height + "px";
-
-      // Initialize canvas context with performance optimizations
-      ctx = canvas.getContext("2d", {
-        alpha: false,
-        desynchronized: true,
+  /**
+   * Setup video stream
+   */
+  async setupVideo() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
       });
 
-      // Add canvas and view to container
-      container.appendChild(canvas);
-      container.appendChild(view);
-
-      // Initialize AR components in sequence
-      initAlva().then(initArjs);
-    })
-    .catch((error) => alert(error));
-
-  // Start button handler to begin frame processing
-  document.getElementById("start").addEventListener("click", (e) => {
-    setupFrameHandler();
-  });
-
-  /**
-   * Initialize AlvaAR for camera pose estimation
-   */
-  async function initAlva() {
-    alva = await AlvaAR.Initialize(canvas.width, canvas.height);
-    arCamView = new ARCamView(view, canvas.width, canvas.height);
-  }
-
-  /**
-   * Initialize AR.js for location-based AR
-   * Sets up test objects at different GPS coordinates
-   */
-  function initArjs() {
-    // Initialize AR.js with the scene and camera
-    arjs = new THREEx.LocationBased(arCamView.scene, arCamView.camera, {
-      initialPositionAsOrigin: true,
-    });
-
-    // Create test geometry (a box)
-    const geom = new THREE.BoxGeometry(20, 20, 20);
-
-    // Define test objects with different materials and positions
-    const props = [
-      {
-        mtl: new THREE.MeshBasicMaterial({ color: 0xff0000 }),
-        lonDis: -0.001, // Slightly west
-        latDis: 0,
-        yDis: 0,
-      },
-      {
-        mtl: new THREE.MeshBasicMaterial({ color: 0xffff00 }),
-        lonDis: 0.001, // Slightly east
-        latDis: 0,
-        yDis: 0,
-      },
-      {
-        mtl: new THREE.MeshBasicMaterial({ color: 0x0000ff }),
-        lonDis: 0,
-        latDis: -0.001, // Slightly south
-        yDis: 0,
-      },
-      {
-        mtl: new THREE.MeshBasicMaterial({ color: 0x00ff00 }),
-        lonDis: 0,
-        latDis: 0.001, // Slightly north
-        yDis: 0,
-      },
-      {
-        mtl: new THREE.MeshBasicMaterial({ color: 0xffff80 }),
-        lonDis: 0,
-        latDis: 0,
-        yDis: 100, // High up
-      },
-      {
-        mtl: new THREE.MeshBasicMaterial({ color: 0xff80ff }),
-        lonDis: 0,
-        latDis: 0,
-        yDis: -100, // Below ground
-      },
-    ];
-
-    // Handle GPS updates
-    arjs.on("gpsupdate", (pos) => {
-      alert(`Got GPS position: ${pos.coords.longitude} ${pos.coords.latitude}`);
-      console.log(`camera position now:`);
-      console.log(arCamView.camera.position);
-
-      // Place test objects on first GPS update
-      if (!gotFirstGps) {
-        for (let i = 0; i < props.length; i++) {
-          const object = new THREE.Mesh(geom, props[i].mtl);
-          object.visible = false;
-          // Convert GPS coordinates to world coordinates
-          const pos = arjs.lonLatToWorldCoords(
-            origLon + props[i].lonDis,
-            origLat + props[i].latDis
-          );
-          console.log(pos);
-          arCamView.addObject(
-            object,
-            pos[0],
-            arCamView.camera.position.y + props[i].yDis,
-            pos[1]
-          );
-        }
-        gotFirstGps = true;
-      }
-    });
-
-    // For testing: Use fake GPS coordinates instead of real GPS
-    arjs.fakeGps(-0.72, 51.05);
-  }
-
-  /**
-   * Update FPS based on recent frame times
-   * @param {number} currentTime - Current timestamp
-   */
-  function updateFPS(currentTime) {
-    frameCount++;
-
-    // Update FPS every second
-    if (currentTime - lastFPSUpdate >= 1000) {
-      currentFPS = frameCount;
-      frameCount = 0;
-      lastFPSUpdate = currentTime;
-
-      // Adjust target frame time based on performance
-      if (currentFPS < MIN_FPS) {
-        // If we're below minimum FPS, increase frame time threshold
-        const avgFrameTime =
-          frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
-        if (avgFrameTime > FRAME_TIME_THRESHOLD) {
-          console.log(
-            `Performance warning: Current FPS ${currentFPS}, adjusting frame time threshold`
-          );
-        }
-      }
+      this.video.srcObject = stream;
+      this.video.play();
+    } catch (error) {
+      console.error("Error accessing camera:", error);
     }
   }
 
   /**
-   * Process a single frame
-   * @param {number} timestamp - Current timestamp
-   * @returns {boolean} Whether to continue processing frames
+   * Add example objects to the scene
    */
-  function processFrame(timestamp) {
-    // Skip frame if too soon since last frame
-    if (timestamp - lastFrameTime < FRAME_TIME_THRESHOLD) {
-      return true;
-    }
+  addExampleObjects() {
+    // Add a cube
+    const geometry = new THREE.BoxGeometry();
+    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const cube = new THREE.Mesh(geometry, material);
+    cube.position.set(0, 0, -5);
+    this.sceneManager.addObject(cube);
 
-    lastFrameTime = timestamp;
-    const frameStartTime = performance.now();
-
-    // Clear and draw video frame
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-
-    // Get frame data for pose estimation
-    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const pose = alva.findCameraPose(frame);
-
-    if (pose) {
-      // Update camera pose if found
-      arCamView.updateCameraPose(pose);
-    } else {
-      // Handle lost camera tracking
-      arCamView.lostCamera();
-      // Draw feature points for debugging
-      const dots = alva.getFramePoints();
-      for (const p of dots) {
-        ctx.fillStyle = "white";
-        ctx.fillRect(p.x, p.y, 2, 2);
-      }
-    }
-
-    // Record frame processing time
-    const frameTime = performance.now() - frameStartTime;
-    frameTimes.push(frameTime);
-    if (frameTimes.length > PERFORMANCE_SAMPLES) {
-      frameTimes.shift();
-    }
-
-    // Update FPS counter
-    updateFPS(timestamp);
-
-    return true;
+    // Add a sphere
+    const sphereGeometry = new THREE.SphereGeometry(1, 32, 32);
+    const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+    sphere.position.set(2, 0, -5);
+    this.sceneManager.addObject(sphere);
   }
 
   /**
-   * Set up the main frame processing loop
-   * Handles camera pose estimation and AR object rendering
+   * Start the AR application
    */
-  function setupFrameHandler() {
-    if (gotFirstGps) {
-      // Use requestAnimationFrame for better timing and performance
-      function animate(timestamp) {
-        if (processFrame(timestamp)) {
-          requestAnimationFrame(animate);
-        }
-      }
-      requestAnimationFrame(animate);
-    } else {
-      alert("Cannot start frame processing as no GPS location yet");
+  start() {
+    if (!this.isInitialized) {
+      console.error("AR application not initialized");
+      return;
     }
+
+    this.sceneManager.start();
+    this.trackerManager.start(this.video);
+  }
+
+  /**
+   * Stop the AR application
+   */
+  stop() {
+    if (!this.isInitialized) return;
+
+    this.sceneManager.stop();
+    this.trackerManager.stop();
+  }
+
+  /**
+   * Update tracking configuration
+   * @param {Object} config - New configuration object
+   */
+  updateConfig(config) {
+    if (!this.isInitialized) return;
+    this.trackerManager.updateConfig(config);
   }
 }
 
-main();
+// Create and initialize the AR application
+const app = new ARApplication();
+app
+  .initialize()
+  .then(() => {
+    console.log("AR application initialized");
+    app.start();
+  })
+  .catch((error) => {
+    console.error("Error initializing AR application:", error);
+  });
