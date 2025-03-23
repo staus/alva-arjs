@@ -41,7 +41,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "./dist" # Adjust this path based on your webpack output directory
+          path: "./public" # Changed to match webpack output directory structure
 
       - name: Deploy to GitHub Pages
         id: deployment
