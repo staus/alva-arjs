@@ -11,6 +11,12 @@ import { Camera, onFrame, resize2cover } from "../alva/assets/utils.js";
 import * as THREE from "three";
 import * as THREEx from "@ar-js-org/ar.js/three.js/build/ar-threex-location-only.js";
 
+// Performance monitoring constants
+const TARGET_FPS = 60;
+const MIN_FPS = 30;
+const FRAME_TIME_THRESHOLD = 1000 / MIN_FPS;
+const PERFORMANCE_SAMPLES = 10;
+
 function main() {
   console.log("main()");
 
@@ -37,6 +43,13 @@ function main() {
   // Global variables for AR components
   let alva, arjs, arCamView, ctx, video;
   let gotFirstGps = false;
+
+  // Performance monitoring variables
+  let lastFrameTime = 0;
+  let frameTimes = [];
+  let currentFPS = TARGET_FPS;
+  let frameCount = 0;
+  let lastFPSUpdate = 0;
 
   // Initialize camera and set up video stream
   Camera.Initialize(config)
@@ -170,35 +183,94 @@ function main() {
   }
 
   /**
+   * Update FPS based on recent frame times
+   * @param {number} currentTime - Current timestamp
+   */
+  function updateFPS(currentTime) {
+    frameCount++;
+
+    // Update FPS every second
+    if (currentTime - lastFPSUpdate >= 1000) {
+      currentFPS = frameCount;
+      frameCount = 0;
+      lastFPSUpdate = currentTime;
+
+      // Adjust target frame time based on performance
+      if (currentFPS < MIN_FPS) {
+        // If we're below minimum FPS, increase frame time threshold
+        const avgFrameTime =
+          frameTimes.reduce((a, b) => a + b, 0) / frameTimes.length;
+        if (avgFrameTime > FRAME_TIME_THRESHOLD) {
+          console.log(
+            `Performance warning: Current FPS ${currentFPS}, adjusting frame time threshold`
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Process a single frame
+   * @param {number} timestamp - Current timestamp
+   * @returns {boolean} Whether to continue processing frames
+   */
+  function processFrame(timestamp) {
+    // Skip frame if too soon since last frame
+    if (timestamp - lastFrameTime < FRAME_TIME_THRESHOLD) {
+      return true;
+    }
+
+    lastFrameTime = timestamp;
+    const frameStartTime = performance.now();
+
+    // Clear and draw video frame
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+
+    // Get frame data for pose estimation
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pose = alva.findCameraPose(frame);
+
+    if (pose) {
+      // Update camera pose if found
+      arCamView.updateCameraPose(pose);
+    } else {
+      // Handle lost camera tracking
+      arCamView.lostCamera();
+      // Draw feature points for debugging
+      const dots = alva.getFramePoints();
+      for (const p of dots) {
+        ctx.fillStyle = "white";
+        ctx.fillRect(p.x, p.y, 2, 2);
+      }
+    }
+
+    // Record frame processing time
+    const frameTime = performance.now() - frameStartTime;
+    frameTimes.push(frameTime);
+    if (frameTimes.length > PERFORMANCE_SAMPLES) {
+      frameTimes.shift();
+    }
+
+    // Update FPS counter
+    updateFPS(timestamp);
+
+    return true;
+  }
+
+  /**
    * Set up the main frame processing loop
    * Handles camera pose estimation and AR object rendering
    */
   function setupFrameHandler() {
     if (gotFirstGps) {
-      onFrame(() => {
-        // Clear and draw video frame
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-
-        // Get frame data for pose estimation
-        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const pose = alva.findCameraPose(frame);
-
-        if (pose) {
-          // Update camera pose if found
-          arCamView.updateCameraPose(pose);
-        } else {
-          // Handle lost camera tracking
-          arCamView.lostCamera();
-          // Draw feature points for debugging
-          const dots = alva.getFramePoints();
-          for (const p of dots) {
-            ctx.fillStyle = "white";
-            ctx.fillRect(p.x, p.y, 2, 2);
-          }
+      // Use requestAnimationFrame for better timing and performance
+      function animate(timestamp) {
+        if (processFrame(timestamp)) {
+          requestAnimationFrame(animate);
         }
-        return true;
-      }, 30); // 30 FPS
+      }
+      requestAnimationFrame(animate);
     } else {
       alert("Cannot start frame processing as no GPS location yet");
     }
