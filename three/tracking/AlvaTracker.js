@@ -19,7 +19,7 @@ export class AlvaTracker {
     this.videoAspectRatio = 16 / 9;
     this.lastPose = null;
     this.poseTimeout = null;
-    this.poseTimeoutDuration = 1000; // 1 second timeout for pose updates
+    this.poseTimeoutDuration = 5000; // Increased to 5 seconds
     this.consecutiveLostFrames = 0;
     this.maxConsecutiveLostFrames = 5;
     this.frameTimeout = null;
@@ -282,21 +282,41 @@ export class AlvaTracker {
   /**
    * Convert AlvaAR pose to Three.js coordinate system
    * @param {Array} pose - AlvaAR pose matrix
-   * @returns {Array} Converted pose matrix
+   * @returns {Object} Converted pose with position and orientation
    */
   convertPoseToThreeJS(pose) {
     // Create a copy of the pose matrix
-    const convertedPose = [...pose];
+    const matrix = [...pose];
 
     // Invert x and negate y,z for rotation
-    convertedPose[0] = -pose[0]; // Invert x
-    convertedPose[1] = pose[1]; // Keep y
-    convertedPose[2] = -pose[2]; // Negate z
+    matrix[0] = -pose[0]; // Invert x
+    matrix[1] = pose[1]; // Keep y
+    matrix[2] = -pose[2]; // Negate z
 
     // Invert y and z for translation
-    convertedPose[13] = -pose[13]; // Invert y
-    convertedPose[14] = -pose[14]; // Invert z
+    matrix[13] = -pose[13]; // Invert y
+    matrix[14] = -pose[14]; // Invert z
 
-    return convertedPose;
+    // Convert matrix to position and orientation
+    const position = {
+      x: matrix[12],
+      y: matrix[13],
+      z: matrix[14],
+    };
+
+    // Extract rotation from matrix
+    const rotation = {
+      x: Math.atan2(matrix[6], matrix[10]),
+      y: Math.atan2(
+        -matrix[2],
+        Math.sqrt(matrix[0] * matrix[0] + matrix[1] * matrix[1])
+      ),
+      z: Math.atan2(matrix[1], matrix[0]),
+    };
+
+    return {
+      position,
+      orientation: rotation,
+    };
   }
 }
