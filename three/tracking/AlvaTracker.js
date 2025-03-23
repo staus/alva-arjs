@@ -101,9 +101,17 @@ export class AlvaTracker {
     const displayWidth = this.processingCanvas.clientWidth;
     const displayHeight = this.processingCanvas.clientHeight;
 
+    // If display dimensions are 0, use base dimensions
+    const effectiveWidth = displayWidth || this.baseWidth;
+    const effectiveHeight = displayHeight || this.baseHeight;
+
     // Calculate processing dimensions based on display size and scale factor
-    this.processedWidth = Math.floor(displayWidth * this.scaleFactor);
-    this.processedHeight = Math.floor(displayHeight * this.scaleFactor);
+    this.processedWidth = Math.floor(effectiveWidth * this.scaleFactor);
+    this.processedHeight = Math.floor(effectiveHeight * this.scaleFactor);
+
+    // Ensure minimum dimensions
+    this.processedWidth = Math.max(1, this.processedWidth);
+    this.processedHeight = Math.max(1, this.processedHeight);
 
     // Update canvas dimensions for processing
     this.processingCanvas.width = this.processedWidth;
@@ -120,6 +128,7 @@ export class AlvaTracker {
 
     console.log(`[AlvaTracker] Updated processing dimensions:`, {
       display: `${displayWidth}x${displayHeight}`,
+      effective: `${effectiveWidth}x${effectiveHeight}`,
       processing: `${this.processedWidth}x${this.processedHeight}`,
       scale: this.scaleFactor,
     });
@@ -214,6 +223,12 @@ export class AlvaTracker {
       return;
     }
 
+    // Ensure we have valid dimensions
+    if (this.processedWidth <= 0 || this.processedHeight <= 0) {
+      console.log("[AlvaTracker] Invalid dimensions, updating...");
+      this.updateProcessingDimensions();
+    }
+
     const currentTime = performance.now();
     this.frameNumber++;
 
@@ -222,6 +237,7 @@ export class AlvaTracker {
       console.log(`[AlvaTracker] Frame ${this.frameNumber} timing:`, {
         fps: this.currentFPS,
         backlog: this.processingBacklog,
+        dimensions: `${this.processedWidth}x${this.processedHeight}`,
       });
       this.lastDebugTime = currentTime;
     }
@@ -321,45 +337,90 @@ export class AlvaTracker {
   }
 
   /**
+   * Wait for video to have valid dimensions
+   * @param {HTMLVideoElement} video - Video element to check
+   * @returns {Promise<void>}
+   */
+  async waitForVideoDimensions(video) {
+    return new Promise((resolve) => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        console.log("[AlvaTracker] Video dimensions already available:", {
+          width: video.videoWidth,
+          height: video.videoHeight,
+        });
+        resolve();
+      } else {
+        console.log("[AlvaTracker] Waiting for video dimensions...");
+        const checkDimensions = () => {
+          if (video.videoWidth > 0 && video.videoHeight > 0) {
+            console.log("[AlvaTracker] Video dimensions now available:", {
+              width: video.videoWidth,
+              height: video.videoHeight,
+            });
+            video.removeEventListener("loadedmetadata", checkDimensions);
+            resolve();
+          } else {
+            console.log("[AlvaTracker] Still waiting for video dimensions...");
+          }
+        };
+        video.addEventListener("loadedmetadata", checkDimensions);
+      }
+    });
+  }
+
+  /**
    * Start tracking
    * @param {HTMLVideoElement} video - Video element to track
    */
-  start(video) {
+  async start(video) {
     if (this.isRunning) {
       console.log("[AlvaTracker] Already running, ignoring start request");
       return;
     }
 
     console.log("[AlvaTracker] Starting tracking...");
-    this.isRunning = true;
     this.video = video;
-    this.lastFrameTime = performance.now();
-    this.frameTimes = [];
-    this.frameCount = 0;
-    this.lastFPSUpdate = 0;
-    this.processingBacklog = 0;
-    this.frameNumber = 0;
 
-    // Calculate video aspect ratio
-    this.videoAspectRatio = video.videoWidth / video.videoHeight;
+    try {
+      // Wait for video to have valid dimensions
+      await this.waitForVideoDimensions(video);
 
-    // Set the aspect ratio CSS property
-    this.processingCanvas.style.aspectRatio = `${this.videoAspectRatio}`;
-    console.log(
-      `[AlvaTracker] Set canvas aspect ratio to: ${this.videoAspectRatio}`
-    );
+      // Calculate video aspect ratio
+      this.videoAspectRatio = video.videoWidth / video.videoHeight;
+      console.log(`[AlvaTracker] Video aspect ratio: ${this.videoAspectRatio}`);
 
-    // Update processing dimensions after aspect ratio is set
-    this.updateProcessingDimensions();
+      // Set the aspect ratio CSS property
+      this.processingCanvas.style.aspectRatio = `${this.videoAspectRatio}`;
+      console.log(
+        `[AlvaTracker] Set canvas aspect ratio to: ${this.videoAspectRatio}`
+      );
 
-    // Log video properties
-    console.log(
-      `[AlvaTracker] Video dimensions: ${video.videoWidth}x${video.videoHeight}`
-    );
-    console.log(`[AlvaTracker] Video readyState: ${video.readyState}`);
+      // Update processing dimensions after aspect ratio is set
+      this.updateProcessingDimensions();
 
-    // Start frame processing loop with fixed interval
-    this.processFrame();
+      // Log video properties
+      console.log(
+        `[AlvaTracker] Video dimensions: ${video.videoWidth}x${video.videoHeight}`
+      );
+      console.log(`[AlvaTracker] Video readyState: ${video.readyState}`);
+
+      // Initialize tracking state
+      this.isRunning = true;
+      this.lastFrameTime = performance.now();
+      this.frameTimes = [];
+      this.frameCount = 0;
+      this.lastFPSUpdate = 0;
+      this.processingBacklog = 0;
+      this.frameNumber = 0;
+
+      // Start frame processing loop with fixed interval
+      this.processFrame();
+      console.log("[AlvaTracker] Frame processing started");
+    } catch (error) {
+      console.error("[AlvaTracker] Error starting tracking:", error);
+      this.isRunning = false;
+      throw error;
+    }
   }
 
   /**
