@@ -36,7 +36,7 @@ class ARApplication {
     if (this.isInitialized) return;
 
     // Initialize scene manager
-    this.sceneManager = new SceneManager(this.container);
+    this.sceneManager = new SceneManager(this.container, this.canvas);
     this.sceneManager.initialize();
 
     // Initialize tracker manager

@@ -5,8 +5,9 @@
 import * as THREE from "three";
 
 export class SceneManager {
-  constructor(container) {
+  constructor(container, canvas) {
     this.container = container;
+    this.canvas = canvas;
     this.scene = null;
     this.camera = null;
     this.renderer = null;
@@ -25,6 +26,7 @@ export class SceneManager {
   initialize() {
     // Create scene
     this.scene = new THREE.Scene();
+    this.scene.background = null; // Make scene background transparent
 
     // Create camera
     this.camera = new THREE.PerspectiveCamera(
@@ -35,8 +37,12 @@ export class SceneManager {
     );
     this.camera.position.z = 5;
 
-    // Create renderer
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // Create renderer using existing canvas
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: this.canvas,
+      antialias: true,
+      alpha: true, // Enable transparency
+    });
     this.renderer.setSize(
       this.container.clientWidth,
       this.container.clientHeight
