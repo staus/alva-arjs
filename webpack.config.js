@@ -1,20 +1,28 @@
-const path = require('path');
-const NodePolyfillPlugin = require('node-polyfill-webpack-plugin');
+const path = require("path");
+const NodePolyfillPlugin = require("node-polyfill-webpack-plugin");
+const CopyPlugin = require("copy-webpack-plugin");
 
 module.exports = {
-    mode: 'development',
-    entry: {
-        'three':  path.resolve(__dirname, 'three/index.js'),
-        'aframe':  path.resolve(__dirname, 'aframe/alva-basic.js'),
-    },
-    output: {
-        path: path.resolve(__dirname, 'public/dist'),
-        filename: '[name]/bundle.js'
-    },
-    optimization: {
-        minimize: false
-    },
-    plugins: [
-        new NodePolyfillPlugin()
-    ]
+  mode: "development",
+  entry: {
+    three: path.resolve(__dirname, "three/index.js"),
+  },
+  output: {
+    path: path.resolve(__dirname, "public"),
+    filename: "dist/index.js",
+  },
+  optimization: {
+    minimize: false,
+  },
+  plugins: [
+    new NodePolyfillPlugin(),
+    new CopyPlugin({
+      patterns: [
+        {
+          from: "three/index.html",
+          to: "dist/index.html",
+        },
+      ],
+    }),
+  ],
 };
