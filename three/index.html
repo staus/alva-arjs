@@ -79,6 +79,7 @@
   <body>
     <div id="ar-container">
       <video id="ar-video" autoplay playsinline></video>
+      <canvas id="alva-canvas"></canvas>
       <canvas id="ar-canvas"></canvas>
     </div>
     <div id="controls">
@@ -93,43 +94,5 @@
     </div>
 
     <script type="module" src="index.js"></script>
-    <script>
-      // Add control handlers
-      document.getElementById("toggle-alva").addEventListener("click", (e) => {
-        const button = e.currentTarget;
-        const isActive = button.classList.contains("active");
-
-        button.classList.toggle("active", !isActive);
-        button.classList.toggle("inactive", isActive);
-        button
-          .querySelector(".status-indicator")
-          .classList.toggle("active", !isActive);
-
-        const config = {
-          pose: {
-            alva: !isActive,
-          },
-        };
-        app.updateConfig(config);
-      });
-
-      document.getElementById("toggle-gps").addEventListener("click", (e) => {
-        const button = e.currentTarget;
-        const isActive = button.classList.contains("active");
-
-        button.classList.toggle("active", !isActive);
-        button.classList.toggle("inactive", isActive);
-        button
-          .querySelector(".status-indicator")
-          .classList.toggle("active", !isActive);
-
-        const config = {
-          pose: {
-            gps: !isActive,
-          },
-        };
-        app.updateConfig(config);
-      });
-    </script>
   </body>
 </html>

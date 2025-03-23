@@ -18,9 +18,20 @@ export class TrackerManager {
         alva: false,
         gps: false,
       },
+      debug: false,
+      performance: {
+        targetFPS: 60,
+        minFPS: 30,
+        scaleFactor: 1.0,
+      },
     };
     this.currentPose = null;
     this.video = null;
+    this.performanceStats = {
+      fps: 0,
+      frameTime: 0,
+      processingBacklog: 0,
+    };
   }
 
   /**
@@ -52,6 +63,7 @@ export class TrackerManager {
     this.video = video;
     if (this.config.pose.alva) {
       this.trackers.alva.start(video);
+      this.trackers.alva.setDebugMode(this.config.debug);
     }
     if (this.config.pose.gps) {
       this.trackers.gps.start();
@@ -71,6 +83,17 @@ export class TrackerManager {
   }
 
   /**
+   * Clean up resources
+   */
+  dispose() {
+    this.stop();
+    if (this.trackers.alva) {
+      this.trackers.alva.dispose();
+      this.trackers.alva = null;
+    }
+  }
+
+  /**
    * Update tracking configuration
    * @param {Object} config - New configuration object
    */
@@ -81,6 +104,7 @@ export class TrackerManager {
     if (this.trackers.alva) {
       if (this.config.pose.alva) {
         this.trackers.alva.start(this.video);
+        this.trackers.alva.setDebugMode(this.config.debug);
       } else {
         this.trackers.alva.stop();
       }
@@ -133,5 +157,25 @@ export class TrackerManager {
    */
   getCurrentPose() {
     return this.currentPose;
+  }
+
+  /**
+   * Get performance statistics
+   * @returns {Object} Performance statistics
+   */
+  getPerformanceStats() {
+    if (this.trackers.alva) {
+      this.performanceStats = {
+        fps: this.trackers.alva.currentFPS,
+        frameTime:
+          this.trackers.alva.frameTimes.length > 0
+            ? this.trackers.alva.frameTimes.reduce((a, b) => a + b, 0) /
+              this.trackers.alva.frameTimes.length
+            : 0,
+        processingBacklog: this.trackers.alva.processingBacklog,
+        scaleFactor: this.trackers.alva.scaleFactor,
+      };
+    }
+    return this.performanceStats;
   }
 }

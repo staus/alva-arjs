@@ -3,21 +3,9 @@
  * This file demonstrates location-based AR using both AlvaAR for camera pose estimation
  * and AR.js for geographic positioning of 3D objects.
  */
-
-//import * as THREE from 'https://threejsfundamentals.org/threejs/resources/threejs/r132/build/three.module.js';
-import { AlvaAR } from "../alva/assets/alva_ar.js";
-import { ARCamView } from "../alva/assets/view.js";
-import { Camera, onFrame, resize2cover } from "../alva/assets/utils.js";
 import * as THREE from "three";
-import * as THREEx from "@ar-js-org/ar.js/three.js/build/ar-threex-location-only.js";
 import { TrackerManager } from "./tracking/TrackerManager.js";
 import { SceneManager } from "./scene/SceneManager.js";
-
-// Performance monitoring constants
-const TARGET_FPS = 60;
-const MIN_FPS = 30;
-const FRAME_TIME_THRESHOLD = 1000 / MIN_FPS;
-const PERFORMANCE_SAMPLES = 10;
 
 class ARApplication {
   constructor() {
@@ -143,6 +131,45 @@ app
   .then(() => {
     console.log("AR application initialized successfully");
     app.start();
+
+    // Add button click handlers
+    document.getElementById("toggle-alva").addEventListener("click", (e) => {
+      const button = e.currentTarget;
+      const isActive = button.classList.contains("active");
+
+      button.classList.toggle("active", !isActive);
+      button.classList.toggle("inactive", isActive);
+      button
+        .querySelector(".status-indicator")
+        .classList.toggle("active", !isActive);
+
+      const config = {
+        pose: {
+          alva: !isActive,
+          gps: app.trackerManager.config.pose.gps,
+        },
+      };
+      app.updateConfig(config);
+    });
+
+    document.getElementById("toggle-gps").addEventListener("click", (e) => {
+      const button = e.currentTarget;
+      const isActive = button.classList.contains("active");
+
+      button.classList.toggle("active", !isActive);
+      button.classList.toggle("inactive", isActive);
+      button
+        .querySelector(".status-indicator")
+        .classList.toggle("active", !isActive);
+
+      const config = {
+        pose: {
+          gps: !isActive,
+          alva: app.trackerManager.config.pose.alva,
+        },
+      };
+      app.updateConfig(config);
+    });
   })
   .catch((error) => {
     console.error("Error initializing AR application:", error);
