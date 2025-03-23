@@ -1,5 +1,7 @@
 # AlvaAR and AR.js Experiments
 
+Further experiments
+
 ## Introduction
 
 The aim of this project is to explore [AlvaAR](https://github.com/alanross/AlvaAR) and integrate with location-based [AR.js](https://github.com/AR-js-org/AR.js), with an eventual aim to place geographic AR content realistically on the ground.
