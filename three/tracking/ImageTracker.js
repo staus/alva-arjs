@@ -27,11 +27,12 @@ export class ImageTracker {
     this.frameInterval = 30; // Fixed 30ms interval
     this.frameNumber = 0;
     this.isInitialized = false;
+    this.isMarkerFound = false;
 
     // Default marker configuration
     this.markerConfig = {
       type: "nft",
-      descriptorsUrl: "data/markers/test/watercolor", // Default path to marker files
+      descriptorsUrl: "data/markers/test2/watercolor", // Default path to marker files
       changeMatrixMode: "cameraTransformMatrix",
       smoothCount: 5, // Number of frames to smooth tracking
       smoothTolerance: 0.01, // Tolerance for smoothing
@@ -116,9 +117,22 @@ export class ImageTracker {
       // Add event listeners for marker loading
       this.markerControls.addEventListener("markerFound", () => {
         console.log("[ImageTracker] Marker found event triggered");
+        this.isMarkerFound = true;
       });
       this.markerControls.addEventListener("markerLost", () => {
         console.log("[ImageTracker] Marker lost event triggered");
+        this.isMarkerFound = false;
+      });
+
+      // Add logging for marker loading
+      this.markerControls.addEventListener("markerLoading", (event) => {
+        console.log("[ImageTracker] Marker loading event:", event);
+      });
+      this.markerControls.addEventListener("markerLoaded", (event) => {
+        console.log("[ImageTracker] Marker loaded event:", event);
+      });
+      this.markerControls.addEventListener("markerLoadError", (event) => {
+        console.error("[ImageTracker] Marker load error event:", event);
       });
 
       console.log(
@@ -205,13 +219,21 @@ export class ImageTracker {
       // Update AR.js context with video frame
       this.arToolkitContext.update(this.video);
 
-      // Check if marker is visible
-      const isMarkerVisible = this.markerControls.object3d.visible;
+      // Check if marker is found
+      if (this.isMarkerFound) {
+        // Get marker's transform matrix
+        const matrix = this.markerControls.object3d.matrix;
 
-      if (isMarkerVisible) {
-        // Get marker object's position and rotation
-        const position = this.markerControls.object3d.position.clone();
-        const rotation = this.markerControls.object3d.rotation.clone();
+        // Extract position and rotation from matrix
+        const position = new THREE.Vector3();
+        const rotation = new THREE.Euler();
+        const scale = new THREE.Vector3();
+
+        matrix.decompose(
+          position,
+          new THREE.Quaternion().setFromEuler(rotation),
+          scale
+        );
 
         // Convert to our pose format
         const pose = {
@@ -235,42 +257,9 @@ export class ImageTracker {
         if (this.poseTimeout) {
           clearTimeout(this.poseTimeout);
         }
-
-        if (this.frameNumber % 30 === 0) {
-          console.log(
-            `[ImageTracker] Frame ${this.frameNumber}: Marker found at position:`,
-            {
-              x: position.x.toFixed(2),
-              y: position.y.toFixed(2),
-              z: position.z.toFixed(2),
-              rotation: {
-                x: ((rotation.x * 180) / Math.PI).toFixed(2),
-                y: ((rotation.y * 180) / Math.PI).toFixed(2),
-                z: ((rotation.z * 180) / Math.PI).toFixed(2),
-              },
-            }
-          );
-        }
       } else {
         // Handle lost marker tracking
         this.consecutiveLostFrames++;
-
-        if (this.frameNumber % 30 === 0) {
-          console.log(
-            `[ImageTracker] Frame ${this.frameNumber}: Lost tracking (consecutive frames: ${this.consecutiveLostFrames})`
-          );
-          // Log additional debug info
-          console.log("[ImageTracker] Debug info:", {
-            markerPath: this.markerConfig.descriptorsUrl,
-            hasMarkerControls: !!this.markerControls,
-            markerPosition: this.markerControls.object3d.position
-              .toArray()
-              .map((v) => v.toFixed(2)),
-            markerRotation: this.markerControls.object3d.rotation
-              .toArray()
-              .map((v) => ((v * 180) / Math.PI).toFixed(2)),
-          });
-        }
 
         if (
           this.lastPose &&

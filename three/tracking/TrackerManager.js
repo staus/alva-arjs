@@ -127,7 +127,7 @@ export class TrackerManager {
         });
         await this.trackers.image.initialize();
         // Set the marker path
-        this.trackers.image.setMarker("data/markers/test/watercolor");
+        //this.trackers.image.setMarker("data/markers/qr/frame");
       }
       this.trackers.image.start(this.video);
       // Update image tracker specific config
