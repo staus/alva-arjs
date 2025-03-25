@@ -10,60 +10,30 @@ import {
 } from "@ar-js-org/ar.js/three.js/build/ar-threex.js";
 
 export class ImageTracker {
-  constructor(canvas, onPoseUpdate) {
-    this.canvas = canvas;
+  constructor(onPoseUpdate) {
     this.onPoseUpdate = onPoseUpdate;
     this.isRunning = false;
     this.arToolkitSource = null;
     this.arToolkitContext = null;
     this.markerControls = null;
     this.video = null;
-    this.lastPose = null;
-    this.poseTimeout = null;
-    this.poseTimeoutDuration = 5000; // 5 seconds timeout
-    this.consecutiveLostFrames = 0;
-    this.maxConsecutiveLostFrames = 5;
-    this.frameTimeout = null;
-    this.frameInterval = 30; // Fixed 30ms interval
-    this.frameNumber = 0;
-    this.isInitialized = false;
-    this.isMarkerFound = false;
+    this.tempCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+    this.frameInterval = 30; // 30ms interval for frame processing
+    this._isMarkerVisible = false;
 
     // Default marker configuration
-    this.markerConfig = {
+    this.markerControlsConfig = {
       type: "nft",
-      descriptorsUrl: "data/markers/test2/watercolor", // Default path to marker files
+      descriptorsUrl: "data/markers/test3/pinball",
       changeMatrixMode: "cameraTransformMatrix",
-      smoothCount: 5, // Number of frames to smooth tracking
-      smoothTolerance: 0.01, // Tolerance for smoothing
-      smoothThreshold: 2, // Threshold for smoothing
+      smoothCount: 5,
+      smoothTolerance: 0.01,
+      smoothThreshold: 2,
+      size: 0.06,
     };
   }
 
-  /**
-   * Initialize the tracker
-   * @returns {Promise<void>}
-   */
   async initialize() {
-    if (this.isInitialized) {
-      console.log("[ImageTracker] Already initialized");
-      return;
-    }
-
-    console.log("[ImageTracker] Starting initialization...");
-    console.log(
-      "[ImageTracker] Initial marker configuration:",
-      this.markerConfig
-    );
-
-    // Log the expected marker file paths
-    const markerPath = this.markerConfig.descriptorsUrl;
-    console.log("[ImageTracker] Expected marker files:", {
-      fset: `${markerPath}.fset`,
-      fset3: `${markerPath}.fset3`,
-      iset: `${markerPath}.iset`,
-    });
-
     try {
       // Initialize AR.js source
       this.arToolkitSource = new ArToolkitSource({
@@ -71,7 +41,6 @@ export class ImageTracker {
         sourceWidth: 480,
         sourceHeight: 640,
       });
-      console.log("[ImageTracker] AR.js source created");
 
       // Initialize AR.js context
       this.arToolkitContext = new ArToolkitContext(
@@ -85,62 +54,82 @@ export class ImageTracker {
           sourceHeight: 640,
         }
       );
-      console.log("[ImageTracker] AR.js context created");
 
-      // Initialize AR.js source first
-      await new Promise((resolve, reject) => {
+      this.arToolkitContext.init(() => {
+        // copy projection matrix to camera
+        this.tempCamera.projectionMatrix.copy(
+          this.arToolkitContext.getProjectionMatrix()
+        );
+      });
+
+      // Add marker detection event listeners
+      window.addEventListener("markerFound", (e) => {
+        if (e.detail.object3d === this.tempCamera) {
+          console.log("Marker tracked");
+          this._isMarkerVisible = true;
+        }
+      });
+
+      window.addEventListener("markerLost", (e) => {
+        if (e.detail.object3d === this.tempCamera) {
+          console.log("Marker lost");
+          this._isMarkerVisible = false;
+          this.onPoseUpdate(null);
+        }
+      });
+
+      // Initialize source and context
+      await new Promise((resolve) => {
         this.arToolkitSource.init(() => {
-          console.log("[ImageTracker] AR.js source initialized");
-          setTimeout(resolve, 1000); // Wait for resize
+          setTimeout(resolve, 1000);
         });
       });
 
-      // Initialize AR.js context
-      await new Promise((resolve, reject) => {
-        this.arToolkitContext.init(() => {
-          console.log("[ImageTracker] AR.js context initialized");
-          resolve();
-        });
+      await new Promise((resolve) => {
+        this.arToolkitContext.init(resolve);
       });
 
-      // Initialize marker controls after context is ready
-      console.log(
-        "[ImageTracker] Creating marker controls with config:",
-        this.markerConfig
-      );
+      // Initialize marker controls
       this.markerControls = new ArMarkerControls(
         this.arToolkitContext,
-        new THREE.Object3D(), // Use a dummy object instead of camera
-        this.markerConfig
+        this.tempCamera,
+        this.markerControlsConfig
       );
 
-      // Add event listeners for marker loading
-      this.markerControls.addEventListener("markerFound", () => {
-        console.log("[ImageTracker] Marker found event triggered");
-        this.isMarkerFound = true;
-      });
-      this.markerControls.addEventListener("markerLost", () => {
-        console.log("[ImageTracker] Marker lost event triggered");
-        this.isMarkerFound = false;
+      // Log marker configuration status
+      console.log("[ImageTracker] Marker configuration:", {
+        type: this.markerControlsConfig.type,
+        descriptorsUrl: this.markerControlsConfig.descriptorsUrl,
+        markerControlsReady: !!this.markerControls,
+        contextReady: !!this.arToolkitContext.arController,
       });
 
-      // Add logging for marker loading
-      this.markerControls.addEventListener("markerLoading", (event) => {
-        console.log("[ImageTracker] Marker loading event:", event);
-      });
-      this.markerControls.addEventListener("markerLoaded", (event) => {
-        console.log("[ImageTracker] Marker loaded event:", event);
-      });
-      this.markerControls.addEventListener("markerLoadError", (event) => {
-        console.error("[ImageTracker] Marker load error event:", event);
-      });
+      // Verify NFT marker files are accessible
+      if (
+        this.markerControlsConfig.type === "nft" &&
+        this.markerControlsConfig.descriptorsUrl
+      ) {
+        const baseUrl = this.markerControlsConfig.descriptorsUrl;
+        const filesToCheck = [".fset", ".fset3", ".iset"].map(
+          (ext) => baseUrl + ext
+        );
 
-      console.log(
-        "[ImageTracker] Marker controls created and event listeners added"
-      );
+        console.log("[ImageTracker] Checking NFT marker files:", filesToCheck);
 
-      this.isInitialized = true;
-      console.log("[ImageTracker] Initialization complete");
+        try {
+          await Promise.all(
+            filesToCheck.map(async (url) => {
+              const response = await fetch(url, { method: "HEAD" });
+              if (!response.ok) throw new Error(`Failed to load ${url}`);
+              console.log(
+                `[ImageTracker] Successfully verified marker file: ${url}`
+              );
+            })
+          );
+        } catch (error) {
+          console.error("[ImageTracker] Failed to verify marker files:", error);
+        }
+      }
     } catch (error) {
       console.error("[ImageTracker] Initialization failed:", error);
       this.dispose();
@@ -148,83 +137,34 @@ export class ImageTracker {
     }
   }
 
-  /**
-   * Start tracking
-   * @param {HTMLVideoElement} video - Video element to track
-   */
   async start(video) {
-    if (!this.isInitialized) {
-      throw new Error("ImageTracker not initialized");
-    }
+    if (this.isRunning) return;
 
-    if (this.isRunning) {
-      console.log("[ImageTracker] Already running, ignoring start request");
-      return;
-    }
-
-    console.log("[ImageTracker] Starting tracking...");
     this.video = video;
+    console.log("[ImageTracker] Starting with video:", {
+      videoReady: video.readyState,
+      width: video.videoWidth,
+      height: video.videoHeight,
+      playing: !video.paused,
+    });
 
-    try {
-      // Initialize tracking state
-      this.isRunning = true;
-      this.lastFrameTime = performance.now();
-      this.frameNumber = 0;
-      this.lastPose = null;
-      if (this.poseTimeout) {
-        clearTimeout(this.poseTimeout);
-      }
-
-      // Start frame processing loop
-      this.processFrame();
-      console.log("[ImageTracker] Frame processing started");
-    } catch (error) {
-      console.error("[ImageTracker] Error starting tracking:", error);
-      this.isRunning = false;
-      throw error;
-    }
+    this.isRunning = true;
+    this.processFrame();
   }
 
-  /**
-   * Stop tracking
-   */
   stop() {
     this.isRunning = false;
-    if (this.frameTimeout) {
-      clearTimeout(this.frameTimeout);
-    }
-    if (this.poseTimeout) {
-      clearTimeout(this.poseTimeout);
-    }
   }
 
-  /**
-   * Process a single frame
-   * @param {number} timestamp - Current timestamp
-   */
   async processFrame() {
-    if (!this.isRunning || !this.video || !this.arToolkitContext) {
-      console.log("[ImageTracker] Frame processing stopped:", {
-        isRunning: this.isRunning,
-        hasVideo: !!this.video,
-        hasContext: !!this.arToolkitContext,
-      });
-      return;
-    }
-
-    const currentTime = performance.now();
-    this.frameNumber++;
+    if (!this.isRunning || !this.video || !this.arToolkitContext) return;
 
     try {
-      // Update AR.js context with video frame
       this.arToolkitContext.update(this.video);
 
-      // Check if marker is found
-      if (this.isMarkerFound) {
-        // Get marker's transform matrix
-        const matrix = this.markerControls.object3d.matrix;
-
-        // Extract position and rotation from matrix
+      // Update pose if marker is visible
+      if (this._isMarkerVisible && this.tempCamera) {
+        const matrix = this.tempCamera.matrix;
         const position = new THREE.Vector3();
         const rotation = new THREE.Euler();
         const scale = new THREE.Vector3();
@@ -235,8 +175,7 @@ export class ImageTracker {
           scale
         );
 
-        // Convert to our pose format
-        const pose = {
+        this.onPoseUpdate({
           position: {
             x: position.x,
             y: position.y,
@@ -247,107 +186,31 @@ export class ImageTracker {
             y: rotation.y,
             z: rotation.z,
           },
-        };
-
-        this.onPoseUpdate(pose);
-        this.lastPose = pose;
-        this.consecutiveLostFrames = 0;
-
-        // Clear pose timeout
-        if (this.poseTimeout) {
-          clearTimeout(this.poseTimeout);
-        }
-      } else {
-        // Handle lost marker tracking
-        this.consecutiveLostFrames++;
-
-        if (
-          this.lastPose &&
-          this.consecutiveLostFrames < this.maxConsecutiveLostFrames
-        ) {
-          // If we have a last known pose and haven't lost too many frames, use it
-          this.onPoseUpdate(this.lastPose);
-
-          // Set timeout to clear last pose if tracking doesn't recover
-          if (!this.poseTimeout) {
-            this.poseTimeout = setTimeout(() => {
-              this.lastPose = null;
-              this.onPoseUpdate(null);
-              if (this.frameNumber % 30 === 0) {
-                console.log(
-                  `[ImageTracker] Frame ${this.frameNumber}: Lost tracking (timeout)`
-                );
-              }
-            }, this.poseTimeoutDuration);
-          }
-        } else {
-          this.onPoseUpdate(null);
-        }
+        });
       }
 
-      // Schedule next frame
-      this.scheduleNextFrame();
+      setTimeout(() => this.processFrame(), this.frameInterval);
     } catch (error) {
       console.error("[ImageTracker] Error processing frame:", error);
-      this.scheduleNextFrame();
+      setTimeout(() => this.processFrame(), this.frameInterval);
     }
   }
 
-  /**
-   * Schedule the next frame processing
-   */
-  scheduleNextFrame() {
-    if (this.frameTimeout) {
-      clearTimeout(this.frameTimeout);
-    }
-    this.frameTimeout = setTimeout(() => {
-      this.processFrame();
-    }, this.frameInterval);
-  }
-
-  /**
-   * Update marker configuration
-   * @param {Object} config - New configuration object
-   */
   updateConfig(config) {
-    if (!this.isInitialized) {
-      throw new Error("ImageTracker not initialized");
-    }
-
-    console.log("[ImageTracker] Updating marker configuration:", config);
-
-    // Update marker configuration
-    this.markerConfig = {
-      ...this.markerConfig,
-      ...config,
-    };
-
-    // Update marker controls if they exist
+    this.markerControlsConfig = { ...this.markerControlsConfig, ...config };
     if (this.markerControls) {
-      console.log(
-        "[ImageTracker] Updating marker controls with new config:",
-        this.markerConfig
-      );
-      Object.assign(this.markerControls.parameters, this.markerConfig);
-    } else {
-      console.warn("[ImageTracker] Marker controls not initialized yet");
+      Object.assign(this.markerControls.parameters, this.markerControlsConfig);
+      console.log("[ImageTracker] Updated marker configuration:", {
+        type: this.markerControlsConfig.type,
+        descriptorsUrl: this.markerControlsConfig.descriptorsUrl,
+      });
     }
   }
 
-  /**
-   * Set the marker to track
-   * @param {string} markerPath - Path to the marker files (without extension)
-   */
   setMarker(markerPath) {
-    console.log("[ImageTracker] Setting marker path:", markerPath);
-    this.updateConfig({
-      descriptorsUrl: markerPath,
-    });
+    this.updateConfig({ descriptorsUrl: markerPath });
   }
 
-  /**
-   * Clean up resources
-   */
   dispose() {
     this.stop();
     if (this.markerControls) {
@@ -362,6 +225,5 @@ export class ImageTracker {
       this.arToolkitSource.dispose();
       this.arToolkitSource = null;
     }
-    this.isInitialized = false;
   }
 }

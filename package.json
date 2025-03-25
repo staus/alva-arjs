@@ -5,7 +5,7 @@
     "build": "npx webpack",
     "dev": "npm run build && http-server public -p 3002",
     "watch": "webpack --watch",
-    "dev:watch": "concurrently \"npm run watch\" \"http-server public -p 3000\""
+    "dev:watch": "concurrently \"npm run watch\" \"http-server public -p 3002\""
   },
   "dependencies": {
     "@ar-js-org/ar.js": "^3.4.7",

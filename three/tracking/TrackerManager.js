@@ -120,7 +120,7 @@ export class TrackerManager {
     if (this.config.pose.image) {
       if (!this.trackers.image) {
         // Initialize Image tracker if not already initialized
-        this.trackers.image = new ImageTracker(this.canvas, (pose) => {
+        this.trackers.image = new ImageTracker((pose) => {
           if (this.config.pose.image) {
             this.handleImagePose(pose);
           }
