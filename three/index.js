@@ -80,7 +80,8 @@ class ARApplication {
     const geometry = new THREE.BoxGeometry();
     const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
     const cube = new THREE.Mesh(geometry, material);
-    cube.position.set(0, 0, -5);
+    cube.position.set(0, 0, 0);
+    cube.scale.set(0.5, 0.5, 0.5);
 
     // Define cube update function
     const cubeUpdate = (cube, deltaTime) => {
@@ -119,9 +120,9 @@ class ARApplication {
    * Update tracking configuration
    * @param {Object} config - New configuration object
    */
-  updateConfig(config) {
+  async updateConfig(config) {
     if (!this.isInitialized) return;
-    this.trackerManager.updateConfig(config);
+    await this.trackerManager.updateConfig(config);
   }
 
   /**
@@ -168,43 +169,71 @@ app
     app.startDebugLoop();
 
     // Add button click handlers
-    document.getElementById("toggle-alva").addEventListener("click", (e) => {
-      const button = e.currentTarget;
-      const isActive = button.classList.contains("active");
+    document
+      .getElementById("toggle-alva")
+      .addEventListener("click", async (e) => {
+        const button = e.currentTarget;
+        const isActive = button.classList.contains("active");
 
-      button.classList.toggle("active", !isActive);
-      button.classList.toggle("inactive", isActive);
-      button
-        .querySelector(".status-indicator")
-        .classList.toggle("active", !isActive);
+        button.classList.toggle("active", !isActive);
+        button.classList.toggle("inactive", isActive);
+        button
+          .querySelector(".status-indicator")
+          .classList.toggle("active", !isActive);
 
-      const config = {
-        pose: {
-          alva: !isActive,
-          gps: app.trackerManager.config.pose.gps,
-        },
-      };
-      app.updateConfig(config);
-    });
+        const config = {
+          pose: {
+            alva: !isActive,
+            gps: app.trackerManager.config.pose.gps,
+            image: app.trackerManager.config.pose.image,
+          },
+        };
+        await app.updateConfig(config);
+      });
 
-    document.getElementById("toggle-gps").addEventListener("click", (e) => {
-      const button = e.currentTarget;
-      const isActive = button.classList.contains("active");
+    document
+      .getElementById("toggle-gps")
+      .addEventListener("click", async (e) => {
+        const button = e.currentTarget;
+        const isActive = button.classList.contains("active");
 
-      button.classList.toggle("active", !isActive);
-      button.classList.toggle("inactive", isActive);
-      button
-        .querySelector(".status-indicator")
-        .classList.toggle("active", !isActive);
+        button.classList.toggle("active", !isActive);
+        button.classList.toggle("inactive", isActive);
+        button
+          .querySelector(".status-indicator")
+          .classList.toggle("active", !isActive);
 
-      const config = {
-        pose: {
-          gps: !isActive,
-          alva: app.trackerManager.config.pose.alva,
-        },
-      };
-      app.updateConfig(config);
-    });
+        const config = {
+          pose: {
+            gps: !isActive,
+            alva: app.trackerManager.config.pose.alva,
+            image: app.trackerManager.config.pose.image,
+          },
+        };
+        await app.updateConfig(config);
+      });
+
+    document
+      .getElementById("toggle-image")
+      .addEventListener("click", async (e) => {
+        const button = e.currentTarget;
+        const isActive = button.classList.contains("active");
+
+        button.classList.toggle("active", !isActive);
+        button.classList.toggle("inactive", isActive);
+        button
+          .querySelector(".status-indicator")
+          .classList.toggle("active", !isActive);
+
+        const config = {
+          pose: {
+            image: !isActive,
+            alva: app.trackerManager.config.pose.alva,
+            gps: app.trackerManager.config.pose.gps,
+          },
+        };
+        await app.updateConfig(config);
+      });
 
     document.getElementById("toggle-debug").addEventListener("click", (e) => {
       const button = e.currentTarget;

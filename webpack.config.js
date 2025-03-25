@@ -22,6 +22,13 @@ module.exports = {
           from: "three/index.html",
           to: "index.html",
         },
+        {
+          from: "three/markers",
+          to: "data/markers",
+          globOptions: {
+            ignore: ["**/*.DS_Store"], // Ignore macOS system files
+          },
+        },
       ],
     }),
   ],

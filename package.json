@@ -3,12 +3,12 @@
   "version": "0.0.1",
   "scripts": {
     "build": "npx webpack",
-    "dev": "npm run build && http-server public -p 3000",
+    "dev": "npm run build && http-server public -p 3002",
     "watch": "webpack --watch",
     "dev:watch": "concurrently \"npm run watch\" \"http-server public -p 3000\""
   },
   "dependencies": {
-    "@ar-js-org/ar.js": "^3.4.5",
+    "@ar-js-org/ar.js": "^3.4.7",
     "aframe-osm-3d": "^0.5.2",
     "http-server": "^14.1.1",
     "jsfreemaplib": "^0.4.0"
